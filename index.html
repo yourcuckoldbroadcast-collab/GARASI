@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Garasi Log</title>
+<meta name="description" content="Catatan servis kendaraan & pengingat berbasis odometer dan waktu. Offline, gratis, datamu milikmu.">
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#14110d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Garasi">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-48.png">
+<style>
+  :root{
+    --bg:#14110d; --bg2:#1b1711; --panel:#211c14; --panel2:#2a241a;
+    --line:rgba(255,210,140,.10); --line2:rgba(255,210,140,.16);
+    --text:#f3ecdd; --muted:#9c917d; --faint:#6f6453;
+    --amber:#ffc454; --amber-dim:#caa04a;
+    --green:#41d97f; --orange:#ff9d2e; --red:#ff5d52;
+    --shadow:0 18px 40px -18px rgba(0,0,0,.8);
+    --mono:ui-monospace,"Roboto Mono","SF Mono",Menlo,Consolas,monospace;
+    --sans:"Segoe UI",system-ui,-apple-system,Roboto,"Helvetica Neue",sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:var(--sans); color:var(--text); background:var(--bg);
+    background-image:
+      radial-gradient(1200px 500px at 50% -10%, rgba(255,180,80,.10), transparent 60%),
+      radial-gradient(700px 400px at 90% 110%, rgba(255,120,40,.06), transparent 60%);
+    background-attachment:fixed;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:560px;margin:0 auto;min-height:100%;display:flex;flex-direction:column}
+
+  header{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;
+    padding:16px 18px 14px;background:linear-gradient(var(--bg) 60%, rgba(20,17,13,.4));backdrop-filter:blur(6px)}
+  .brand{display:flex;align-items:center;gap:11px}
+  .logo{width:34px;height:34px;border-radius:10px;display:grid;place-items:center;
+    background:radial-gradient(circle at 50% 35%, #2b241a, #15110c);border:1px solid var(--line2);
+    box-shadow:inset 0 1px 0 rgba(255,200,120,.12)}
+  .logo svg{width:24px;height:24px}
+  .brand h1{font-family:var(--mono);font-size:15px;letter-spacing:.32em;margin:0;text-transform:uppercase;font-weight:600}
+  .brand small{display:block;font-size:9.5px;letter-spacing:.34em;color:var(--faint);margin-top:2px}
+  .iconbtn{background:var(--panel);border:1px solid var(--line);color:var(--muted);width:40px;height:40px;
+    border-radius:11px;display:grid;place-items:center;cursor:pointer;transition:.18s}
+  .iconbtn:active{transform:scale(.93)}
+  .iconbtn svg{width:20px;height:20px}
+
+  .vbar{display:flex;gap:8px;overflow-x:auto;padding:4px 18px 14px;scrollbar-width:none}
+  .vbar::-webkit-scrollbar{display:none}
+  .chip{flex:0 0 auto;border:1px solid var(--line);background:var(--panel);color:var(--muted);
+    padding:9px 15px;border-radius:99px;font-size:13.5px;font-weight:600;cursor:pointer;transition:.18s;white-space:nowrap}
+  .chip:active{transform:scale(.96)}
+  .chip.active{color:#1a140a;background:linear-gradient(180deg,#ffce6e,#f5a623);border-color:transparent;
+    box-shadow:0 6px 16px -6px rgba(245,166,35,.6)}
+  .chip.add{color:var(--amber);border-style:dashed;border-color:var(--line2);background:transparent}
+
+  main{flex:1;padding:0 18px 120px}
+
+  .odo{position:relative;border:1px solid var(--line2);border-radius:20px;
+    background:linear-gradient(160deg,#241e15,#17130d);box-shadow:var(--shadow);
+    padding:20px 20px 18px;margin-bottom:18px;overflow:hidden}
+  .odo::before{content:"";position:absolute;inset:0;
+    background:radial-gradient(420px 120px at 30% 0%, rgba(255,196,84,.12),transparent 70%);pointer-events:none}
+  .odo .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.3em;color:var(--faint);text-transform:uppercase}
+  .readout{display:flex;align-items:baseline;gap:10px;margin-top:8px}
+  .readout .num{font-family:var(--mono);font-weight:700;font-size:clamp(38px,11.5vw,56px);line-height:1;
+    color:var(--amber);text-shadow:0 0 22px rgba(255,196,84,.35);letter-spacing:.02em;font-variant-numeric:tabular-nums}
+  .readout .unit{font-family:var(--mono);font-size:16px;color:var(--amber-dim);letter-spacing:.15em}
+  .odo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .odo .editbtn{flex:0 0 auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+    color:var(--amber);background:rgba(255,196,84,.08);border:1px solid var(--line2);padding:7px 12px;border-radius:9px;
+    cursor:pointer;display:flex;align-items:center;gap:6px;text-transform:uppercase}
+  .odo .editbtn:active{transform:scale(.95)}
+
+  .sect{display:flex;align-items:center;justify-content:space-between;margin:6px 2px 12px;gap:10px}
+  .sect h2{font-family:var(--mono);font-size:11px;letter-spacing:.28em;color:var(--muted);text-transform:uppercase;margin:0;font-weight:600}
+  .seg{display:flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;background:var(--panel)}
+  .seg button{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+    border:none;background:transparent;color:var(--faint);padding:7px 11px;cursor:pointer}
+  .seg button.on{background:linear-gradient(180deg,#ffce6e,#f5a623);color:#1a140a}
+
+  .rem{border:1px solid var(--line);border-radius:16px;background:var(--panel);padding:14px 15px 13px;
+    margin-bottom:12px;position:relative;overflow:hidden;transition:opacity .15s,transform .12s}
+  .rem.dragging{opacity:.6;transform:scale(.99);border-color:var(--amber)}
+  .rem.tap{cursor:pointer}
+  .rem.tap:active{background:var(--panel2)}
+  .rem .stripe{position:absolute;left:0;top:0;bottom:0;width:4px;border-radius:4px 0 0 4px}
+  .rem .top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .rem .name{font-size:16px;font-weight:700;margin:0 0 4px;color:var(--text);display:flex;align-items:center;gap:7px}
+  .pinmark{color:var(--amber);font-size:12px}
+  .rem .meta{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.03em}
+  .badge{font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.08em;padding:5px 9px;
+    border-radius:8px;text-transform:uppercase;white-space:nowrap;flex:0 0 auto}
+  .bar{height:8px;border-radius:99px;background:rgba(255,255,255,.06);margin:12px 0 9px;overflow:hidden}
+  .bar > i{display:block;height:100%;border-radius:99px;transition:width .5s ease}
+  .rem .foot{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+  .rests{display:flex;gap:6px;flex-wrap:wrap}
+  .rpill{font-family:var(--mono);font-size:11px;padding:4px 8px;border-radius:7px;background:rgba(255,255,255,.05);color:var(--muted)}
+  .rpill b{color:var(--text)}
+  .rem .acts{display:flex;gap:6px;align-items:center}
+  .mini{font-size:12px;font-weight:600;border-radius:9px;padding:8px 10px;cursor:pointer;border:1px solid var(--line);
+    background:var(--panel2);color:var(--muted);transition:.15s;line-height:1}
+  .mini:active{transform:scale(.92)}
+  .mini.go{color:var(--green);border-color:rgba(65,217,127,.3)}
+  .mini.pin.on{color:var(--amber);border-color:rgba(255,196,84,.4);background:rgba(255,196,84,.08)}
+  .handle{touch-action:none;cursor:grab;color:var(--faint);padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
+  .arrows{display:flex;flex-direction:column;gap:3px}
+  .arrows button{border:1px solid var(--line);background:var(--panel2);color:var(--muted);border-radius:7px;
+    width:30px;height:18px;display:grid;place-items:center;cursor:pointer;font-size:10px;line-height:1}
+
+  .s-safe{--c:var(--green)} .s-warn{--c:var(--orange)} .s-danger{--c:var(--red)}
+  .s-safe .stripe,.s-warn .stripe,.s-danger .stripe{background:var(--c);box-shadow:0 0 14px -2px var(--c)}
+  .s-safe .bar>i,.s-warn .bar>i,.s-danger .bar>i{background:var(--c)}
+  .s-safe .badge{color:var(--green);background:rgba(65,217,127,.12)}
+  .s-warn .badge{color:var(--orange);background:rgba(255,157,46,.12)}
+  .s-danger .badge{color:var(--red);background:rgba(255,93,82,.14)}
+
+  .addrem{width:100%;border:1px dashed var(--line2);background:transparent;color:var(--amber);border-radius:14px;
+    padding:14px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:2px}
+  .addrem:active{transform:scale(.98)}
+
+  .empty{text-align:center;padding:54px 24px;color:var(--muted)}
+  .empty .big{width:72px;height:72px;margin:0 auto 18px;border-radius:20px;display:grid;place-items:center;
+    background:radial-gradient(circle at 50% 35%,#2b241a,#15110c);border:1px solid var(--line2)}
+  .empty .big svg{width:42px;height:42px}
+  .empty h3{margin:0 0 6px;font-size:18px;color:var(--text)}
+  .empty p{margin:0 auto 22px;max-width:300px;font-size:14px;line-height:1.55}
+  .cta{background:linear-gradient(180deg,#ffce6e,#f5a623);color:#1a140a;border:none;padding:13px 22px;border-radius:12px;
+    font-size:15px;font-weight:700;cursor:pointer;box-shadow:0 10px 24px -8px rgba(245,166,35,.55)}
+  .cta:active{transform:scale(.97)}
+
+  .scrim{position:fixed;inset:0;background:rgba(8,6,3,.72);backdrop-filter:blur(3px);z-index:50;display:none;
+    align-items:flex-end;justify-content:center}
+  .scrim.show{display:flex}
+  .sheet{width:100%;max-width:560px;background:var(--bg2);border:1px solid var(--line2);border-radius:22px 22px 0 0;
+    padding:22px 20px calc(22px + env(safe-area-inset-bottom));box-shadow:0 -20px 50px -10px rgba(0,0,0,.7);
+    animation:up .28s cubic-bezier(.2,.8,.2,1);max-height:88vh;overflow-y:auto}
+  @keyframes up{from{transform:translateY(40px);opacity:.4}to{transform:translateY(0);opacity:1}}
+  .sheet h3{margin:0 0 16px;font-size:18px;display:flex;align-items:center;gap:9px}
+  .field{margin-bottom:14px}
+  .field label{display:block;font-family:var(--mono);font-size:11px;letter-spacing:.1em;color:var(--muted);
+    text-transform:uppercase;margin-bottom:7px}
+  .field input,.field select,.field textarea{width:100%;background:var(--panel);border:1px solid var(--line2);color:var(--text);
+    border-radius:12px;padding:13px 14px;font-size:16px;font-family:var(--sans);outline:none;transition:.15s}
+  .field textarea{min-height:64px;resize:vertical}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--amber);box-shadow:0 0 0 3px rgba(255,196,84,.13)}
+  .field .hint{font-size:11.5px;color:var(--faint);margin-top:6px;line-height:1.4}
+  .field .err{font-size:12px;color:var(--red);margin-top:6px;display:none}
+  .field.bad input,.field.bad select{border-color:var(--red)}
+  .field.bad .err{display:block}
+  .two{display:flex;gap:10px}.two>*{flex:1}
+  .row{display:flex;gap:10px;margin-top:6px}
+  .btn{flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
+  .btn.ghost{background:transparent;color:var(--muted)}
+  .btn.primary{background:linear-gradient(180deg,#ffce6e,#f5a623);color:#1a140a;border:none;box-shadow:0 8px 20px -8px rgba(245,166,35,.5)}
+  .btn.danger{background:var(--red);color:#fff;border:none}
+  .btn:active{transform:scale(.97)}
+  .menu-item{display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:transparent;border:none;
+    color:var(--text);padding:15px 6px;font-size:15px;cursor:pointer;border-bottom:1px solid var(--line)}
+  .menu-item:last-child{border-bottom:none}
+  .menu-item svg{width:21px;height:21px;color:var(--amber);flex:0 0 auto}
+  .menu-item small{display:block;color:var(--faint);font-size:12px;margin-top:2px}
+
+  /* detail sheet */
+  .dt-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:4px}
+  .dt-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:14px 0}
+  .dt-cell{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:11px 12px}
+  .dt-cell .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase;margin-bottom:5px}
+  .dt-cell .v{font-size:14px;color:var(--text);font-weight:600}
+  .dt-cell .v small{display:block;color:var(--muted);font-weight:400;font-size:12px;margin-top:2px}
+  .logitem{border:1px solid var(--line);border-radius:12px;padding:11px 12px;margin-bottom:9px;background:var(--panel)}
+  .logitem .lh{display:flex;justify-content:space-between;align-items:center;gap:8px}
+  .logitem .ldate{font-weight:700;font-size:14px}
+  .logitem .lodo{font-family:var(--mono);font-size:12px;color:var(--amber-dim)}
+  .logitem .lcost{font-family:var(--mono);font-size:12px;color:var(--green);margin-top:4px}
+  .logitem .lnote{font-size:13px;color:var(--muted);margin-top:6px;line-height:1.45;white-space:pre-wrap}
+  .logitem .lact{display:flex;gap:8px;margin-top:9px}
+  .logitem .lact button{font-size:11.5px;border:1px solid var(--line);background:var(--panel2);color:var(--muted);
+    border-radius:8px;padding:6px 10px;cursor:pointer}
+  .logitem .lact .x{color:var(--red);border-color:rgba(255,93,82,.25)}
+  .emptylog{color:var(--faint);font-size:13px;text-align:center;padding:14px 0}
+
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(20px);background:#2c2519;
+    border:1px solid var(--line2);color:var(--text);padding:12px 18px;border-radius:12px;font-size:14px;z-index:90;
+    opacity:0;pointer-events:none;transition:.25s;box-shadow:var(--shadow);max-width:90%}
+  #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* confirm overlay (stacks above sheet) */
+  #cf{position:fixed;inset:0;background:rgba(8,6,3,.6);z-index:70;display:none;align-items:center;justify-content:center;padding:22px}
+  #cf.show{display:flex}
+  #cf .box{background:var(--bg2);border:1px solid var(--line2);border-radius:18px;padding:20px;max-width:380px;width:100%;box-shadow:var(--shadow)}
+  #cf h4{margin:0 0 8px;font-size:17px}
+  #cf p{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.55}
+
+  #install{display:none;margin:0 18px 14px;align-items:center;gap:12px;background:linear-gradient(160deg,#241e15,#1a160f);
+    border:1px solid var(--line2);border-radius:14px;padding:12px 14px}
+  #install.show{display:flex}
+  #install p{margin:0;font-size:13px;color:var(--muted);flex:1;line-height:1.4}
+  #install b{color:var(--text)}
+  #install button{background:var(--amber);color:#1a140a;border:none;padding:9px 14px;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap}
+  #install .x{background:transparent;color:var(--faint);padding:8px;font-size:18px;border:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <div class="logo"><svg viewBox="0 0 24 24" fill="none"><path d="M12 3a9 9 0 0 0-9 9 9 9 0 0 0 .35 2.5h17.3A9 9 0 0 0 21 12a9 9 0 0 0-9-9Z" stroke="#ffc454" stroke-width="1.4"/><path d="M12 12l4.5-3" stroke="#ffc454" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="1.6" fill="#ffc454"/></svg></div>
+      <div><h1>GARASI</h1><small>VEHICLE LOG</small></div>
+    </div>
+    <button class="iconbtn" id="menuBtn" aria-label="Menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg></button>
+  </header>
+
+  <div class="vbar" id="vbar"></div>
+  <div id="install"><p><b>Pasang ke layar utama</b><br>Akses cepat seperti aplikasi biasa.</p><button id="installBtn">Pasang</button><button class="x" id="installX" aria-label="Tutup">&times;</button></div>
+  <main id="main"></main>
+</div>
+
+<div class="scrim" id="scrim"><div class="sheet" id="sheet"></div></div>
+<div id="cf"><div class="box"><h4 id="cfT"></h4><p id="cfM"></p><div class="row"><button class="btn ghost" id="cfN">Batal</button><button class="btn danger" id="cfY">Lanjutkan</button></div></div></div>
+<div id="toast"></div>
+<input type="file" id="fileInput" accept="application/json,.json" style="display:none">
+
+<script>
+"use strict";
+const KEY="garasi-log-v1";
+const $=s=>document.querySelector(s);
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const nf=n=>Number(n||0).toLocaleString("id-ID");
+const clean=v=>{const n=parseInt(String(v).replace(/[^\d]/g,""),10);return isNaN(n)?0:n;};
+const esc=s=>String(s==null?"":s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ---- dates ---- */
+const MON=["Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+const MONL=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const DAYL=["Minggu","Senin","Selasa","Rabu","Kamis","Jumat","Sabtu"];
+const pad=n=>String(n).padStart(2,"0");
+const ymd=d=>d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());
+const todayStr=()=>ymd(new Date());
+function parseD(s){const p=String(s).split("-").map(Number);return new Date(p[0],p[1]-1,p[2]);}
+function addMonths(s,n){const d=parseD(s);const day=d.getDate();d.setMonth(d.getMonth()+Number(n));if(d.getDate()<day)d.setDate(0);return ymd(d);}
+function diffDays(a,b){return Math.round((parseD(b)-parseD(a))/86400000);}
+const fmtD=s=>{if(!s)return "—";const d=parseD(s);return d.getDate()+" "+MON[d.getMonth()]+" "+d.getFullYear();};
+const fmtDLong=s=>{if(!s)return "—";const d=parseD(s);return DAYL[d.getDay()]+", "+d.getDate()+" "+MONL[d.getMonth()]+" "+d.getFullYear();};
+
+/* ---- categories / priority ---- */
+const CATS=[
+  {name:"Oli Mesin",tier:1,kw:["oli mesin"]},
+  {name:"Oli Gardan",tier:1,kw:["gardan","garda"]},
+  {name:"Oli Transmisi/Matic",tier:1,kw:["transmisi","matic"]},
+  {name:"Rem (minyak/kampas)",tier:1,kw:["rem","kampas rem","minyak rem"]},
+  {name:"CVT / V-belt",tier:2,kw:["cvt","v-belt","vbelt","v belt"]},
+  {name:"Rantai",tier:2,kw:["rantai"]},
+  {name:"Kopling",tier:2,kw:["kopling"]},
+  {name:"Aki",tier:2,kw:["aki","accu"]},
+  {name:"Filter Oli",tier:2,kw:["filter oli"]},
+  {name:"Ban",tier:3,kw:["ban"]},
+  {name:"Busi",tier:3,kw:["busi"]},
+  {name:"Filter Udara",tier:3,kw:["filter udara"]},
+  {name:"Filter Bensin",tier:3,kw:["filter bensin","filter bahan bakar"]},
+  {name:"Radiator/Coolant",tier:3,kw:["radiator","coolant"]},
+  {name:"Lainnya",tier:4,kw:[]}
+];
+function tierOf(r){
+  if(r.category){const c=CATS.find(c=>c.name===r.category);if(c)return c.tier;}
+  const n=(r.name||"").toLowerCase();
+  for(const c of CATS){for(const k of c.kw){if(k&&n.includes(k))return c.tier;}}
+  return 4;
+}
+
+let state={vehicles:[],selected:null};
+
+/* ---------- storage + migration ---------- */
+function migrate(s){
+  if(!s||typeof s!=="object")s={vehicles:[],selected:null};
+  if(!Array.isArray(s.vehicles))s.vehicles=[];
+  s.vehicles.forEach(v=>{
+    v.odo=clean(v.odo);
+    if(v.sortMode!=="manual")v.sortMode="auto";
+    if(!Array.isArray(v.reminders))v.reminders=[];
+    v.reminders.forEach((r,ri)=>{
+      if(r.intervalKm==null&&r.interval!=null)r.intervalKm=clean(r.interval);
+      delete r.interval;
+      r.intervalKm=clean(r.intervalKm);
+      r.intervalMonths=clean(r.intervalMonths);
+      if(r.baseOdo==null&&r.base!=null)r.baseOdo=clean(r.base);
+      delete r.base;
+      r.baseOdo=clean(r.baseOdo);
+      if(r.baseDate&&!/^\d{4}-\d{2}-\d{2}$/.test(r.baseDate))r.baseDate=null;
+      if(typeof r.pinned!=="boolean")r.pinned=false;
+      if(r.order==null)r.order=ri;
+      if(!Array.isArray(r.logs))r.logs=[];
+      if(r.category===undefined)r.category=null;
+      r.id=r.id||uid();
+    });
+  });
+  if(!s.selected||!s.vehicles.some(v=>v.id===s.selected))
+    s.selected=s.vehicles[0]?s.vehicles[0].id:null;
+  return s;
+}
+function load(){
+  try{const r=localStorage.getItem(KEY);if(r)state=JSON.parse(r);}catch(e){console.warn(e);}
+  state=migrate(state);
+}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){toast("Gagal menyimpan");}}
+const vehicle=()=>state.vehicles.find(v=>v.id===state.selected)||null;
+const findRem=id=>{const v=vehicle();return v?v.reminders.find(r=>r.id===id):null;};
+
+/* ---------- status (hybrid km + bulan, mana lebih dulu) ---------- */
+function status(r,odo){
+  const today=todayStr();
+  let sev=2,pct=0,kmRem=null,dateRem=null,dueOdo=null,dueDate=null;
+  if(r.intervalKm>0){
+    dueOdo=r.baseOdo+r.intervalKm; kmRem=dueOdo-odo;
+    pct=Math.max(pct,Math.min(100,Math.max(0,((odo-r.baseOdo)/r.intervalKm)*100)));
+    const th=Math.max(r.intervalKm*0.1,100);
+    sev=Math.min(sev, kmRem<=0?0:(kmRem<=th?1:2));
+  }
+  if(r.intervalMonths>0&&r.baseDate){
+    dueDate=addMonths(r.baseDate,r.intervalMonths); dateRem=diffDays(today,dueDate);
+    const total=Math.max(1,diffDays(r.baseDate,dueDate)), used=diffDays(r.baseDate,today);
+    pct=Math.max(pct,Math.min(100,Math.max(0,(used/total)*100)));
+    const th=Math.max(Math.round(total*0.1),7);
+    sev=Math.min(sev, dateRem<=0?0:(dateRem<=th?1:2));
+  }
+  const sName=sev===0?"danger":sev===1?"warn":"safe";
+  const label=sev===0?"HARUS GANTI":sev===1?"SEGERA":"AMAN";
+  return {sev,sName,label,pct:Math.round(pct),kmRem,dateRem,dueOdo,dueDate};
+}
+
+/* ---------- sorting ---------- */
+function sortedReminders(v){
+  const list=[...v.reminders];
+  if(v.sortMode==="manual")return list.sort((a,b)=>(a.order||0)-(b.order||0));
+  return list.sort((a,b)=>{
+    if((b.pinned?1:0)!==(a.pinned?1:0))return (b.pinned?1:0)-(a.pinned?1:0);
+    const sa=status(a,v.odo),sb=status(b,v.odo);
+    if(sa.sev!==sb.sev)return sa.sev-sb.sev;       // urgensi menang (danger=0 dulu)
+    const ta=tierOf(a),tb=tierOf(b);
+    if(ta!==tb)return ta-tb;                        // prioritas jenis (tier 1 dulu)
+    return sb.pct-sa.pct;                           // progres lebih tinggi dulu
+  });
+}
+
+/* ---------- render ---------- */
+function render(){renderChips();renderMain();}
+function renderChips(){
+  const bar=$("#vbar");bar.innerHTML="";
+  state.vehicles.forEach(v=>{
+    const c=document.createElement("button");
+    c.className="chip"+(v.id===state.selected?" active":"");c.textContent=v.name;
+    c.onclick=()=>{state.selected=v.id;save();render();};bar.appendChild(c);
+  });
+  const add=document.createElement("button");add.className="chip add";add.innerHTML="＋ Kendaraan";
+  add.onclick=()=>vehicleModal();bar.appendChild(add);
+}
+
+function renderMain(){
+  const m=$("#main");m.innerHTML="";
+  const v=vehicle();
+  if(!v){
+    m.innerHTML=`<div class="empty"><div class="big"><svg viewBox="0 0 24 24" fill="none" stroke="#ffc454" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17h14M6.5 17l1-5.2a2 2 0 0 1 2-1.8h5a2 2 0 0 1 2 1.8l1 5.2"/><path d="M4 17v2M20 17v2"/><circle cx="8" cy="17" r="1.2"/><circle cx="16" cy="17" r="1.2"/></svg></div>
+      <h3>Belum ada kendaraan</h3><p>Tambahkan kendaraan pertamamu untuk mulai mencatat odometer dan pengingat servis.</p>
+      <button class="cta" id="firstAdd">＋ Tambah Kendaraan</button></div>`;
+    $("#firstAdd").onclick=()=>vehicleModal();return;
+  }
+  const odo=document.createElement("div");odo.className="odo";
+  odo.innerHTML=`<div class="odo-top"><div class="lbl">Odometer · ${esc(v.name)}</div>
+    <button class="editbtn" id="editOdo"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Ubah</button></div>
+    <div class="readout"><span class="num">${nf(v.odo)}</span><span class="unit">KM</span></div>`;
+  m.appendChild(odo);
+  odo.querySelector("#editOdo").onclick=()=>odoModal();
+
+  const sect=document.createElement("div");sect.className="sect";
+  sect.innerHTML=`<h2>Pengingat Servis</h2>
+    <div class="seg"><button id="sA" class="${v.sortMode==="auto"?"on":""}">Otomatis</button><button id="sM" class="${v.sortMode==="manual"?"on":""}">Manual</button></div>`;
+  m.appendChild(sect);
+  sect.querySelector("#sA").onclick=()=>{v.sortMode="auto";save();render();};
+  sect.querySelector("#sM").onclick=()=>{normalizeOrder(v);v.sortMode="manual";save();render();};
+
+  if(v.reminders.length===0){
+    const e=document.createElement("div");e.className="empty";e.style.padding="26px 10px";
+    e.innerHTML=`<p style="margin-bottom:16px">Belum ada pengingat. Tambahkan misalnya "Ganti Oli Mesin" tiap 2.000 km / 2 bulan.</p>`;
+    m.appendChild(e);
+  }
+
+  const wrap=document.createElement("div");wrap.id="remList";m.appendChild(wrap);
+  sortedReminders(v).forEach(r=>wrap.appendChild(remCard(r,v)));
+  if(v.sortMode==="manual")enableDrag(wrap,v);
+
+  const add=document.createElement("button");add.className="addrem";add.innerHTML="＋ Tambah Pengingat";
+  add.onclick=()=>reminderModal();m.appendChild(add);
+
+  const dv=document.createElement("button");dv.className="mini del";
+  dv.style.cssText="margin:24px auto 0;display:block;padding:9px 14px;color:var(--red);border-color:rgba(255,93,82,.25)";
+  dv.textContent="Hapus kendaraan ini";dv.onclick=()=>delVehicle(v.id);m.appendChild(dv);
+}
+
+function remCard(r,v){
+  const st=status(r,v.odo);
+  const card=document.createElement("div");
+  card.className="rem s-"+st.sName+(v.sortMode==="auto"?" tap":"");
+  card.dataset.id=r.id;
+  const rules=[];
+  if(r.intervalKm>0)rules.push("tiap "+nf(r.intervalKm)+" km");
+  if(r.intervalMonths>0)rules.push("tiap "+r.intervalMonths+" bln");
+  const rests=[];
+  if(st.kmRem!=null)rests.push(`<span class="rpill">${st.kmRem>0?"sisa <b>"+nf(st.kmRem)+"</b> km":"lewat <b>"+nf(-st.kmRem)+"</b> km"}</span>`);
+  if(st.dateRem!=null)rests.push(`<span class="rpill">${st.dateRem>0?"sisa <b>"+st.dateRem+"</b> hari":"lewat <b>"+(-st.dateRem)+"</b> hari"}</span>`);
+
+  let acts="";
+  if(v.sortMode==="manual"){
+    acts=`<div class="arrows"><button data-up>▲</button><button data-dn>▼</button></div><span class="handle" data-handle>⠿</span>`;
+  }else{
+    acts=`<button class="mini pin ${r.pinned?"on":""}" data-pin title="Pin">📌</button>
+          <button class="mini go" data-done>✓ Catat</button>`;
+  }
+  card.innerHTML=`<span class="stripe"></span>
+    <div class="top"><div>
+      <p class="name">${r.pinned?'<span class="pinmark">📌</span>':""}${esc(r.name)}</p>
+      <span class="meta">${rules.join(" · ")||"tanpa interval"}</span>
+    </div><span class="badge">${st.label}</span></div>
+    <div class="bar"><i style="width:${st.pct}%"></i></div>
+    <div class="foot"><div class="rests">${rests.join("")||'<span class="rpill">belum ada aturan</span>'}</div><div class="acts">${acts}</div></div>`;
+
+  if(v.sortMode==="auto"){
+    card.querySelector("[data-pin]").onclick=e=>{e.stopPropagation();r.pinned=!r.pinned;save();render();};
+    card.querySelector("[data-done]").onclick=e=>{e.stopPropagation();serviceModal(r.id);};
+    card.onclick=()=>detailSheet(r.id);
+  }else{
+    card.querySelector("[data-up]").onclick=()=>moveRem(v,r.id,-1);
+    card.querySelector("[data-dn]").onclick=()=>moveRem(v,r.id,1);
+  }
+  return card;
+}
+
+/* ---------- manual order ---------- */
+function normalizeOrder(v){sortedReminders(v).forEach((r,i)=>r.order=i);}
+function moveRem(v,id,dir){
+  const arr=sortedReminders(v);const i=arr.findIndex(r=>r.id===id);const j=i+dir;
+  if(j<0||j>=arr.length)return;
+  [arr[i].order,arr[j].order]=[arr[j].order,arr[i].order];save();render();
+}
+function enableDrag(wrap,v){
+  wrap.querySelectorAll("[data-handle]").forEach(h=>{
+    let dragging=null;
+    h.addEventListener("pointerdown",e=>{
+      e.preventDefault();
+      dragging=h.closest(".rem");dragging.classList.add("dragging");
+      try{h.setPointerCapture(e.pointerId);}catch(_){}
+    });
+    h.addEventListener("pointermove",e=>{
+      if(!dragging)return;
+      const el=document.elementFromPoint(e.clientX,e.clientY);
+      const over=el&&el.closest?el.closest(".rem"):null;
+      if(over&&over!==dragging&&over.parentNode===wrap){
+        const rect=over.getBoundingClientRect();
+        wrap.insertBefore(dragging, e.clientY>rect.top+rect.height/2 ? over.nextSibling : over);
+      }
+    });
+    const end=()=>{
+      if(!dragging)return;dragging.classList.remove("dragging");
+      [...wrap.children].forEach((c,i)=>{const r=v.reminders.find(x=>x.id===c.dataset.id);if(r)r.order=i;});
+      dragging=null;save();render();
+    };
+    h.addEventListener("pointerup",end);
+    h.addEventListener("pointercancel",end);
+  });
+}
+
+/* ---------- sheet helpers ---------- */
+function openSheet(html){$("#sheet").innerHTML=html;$("#scrim").classList.add("show");}
+function closeSheet(){$("#scrim").classList.remove("show");}
+$("#scrim").addEventListener("click",e=>{if(e.target.id==="scrim")closeSheet();});
+
+let cfYes=null,cfNo=null;
+function confirmBox(title,msg,onYes,yesLabel,opts){
+  opts=opts||{};
+  $("#cfT").textContent=title;$("#cfM").textContent=msg;
+  $("#cfY").textContent=yesLabel||"Lanjutkan";
+  $("#cfN").textContent=opts.noLabel||"Batal";
+  cfYes=onYes;cfNo=opts.onNo||null;$("#cf").classList.add("show");
+}
+function cfHide(){$("#cf").classList.remove("show");$("#cfN").textContent="Batal";}
+$("#cfN").onclick=()=>{cfHide();const f=cfNo;cfYes=null;cfNo=null;if(f)f();};
+$("#cfY").onclick=()=>{cfHide();const f=cfYes;cfYes=null;cfNo=null;if(f)f();};
+$("#cf").addEventListener("click",e=>{if(e.target.id==="cf"){cfHide();cfYes=null;cfNo=null;}});
+
+const catOptions=sel=>`<option value="">— pilih / kosongkan —</option>`+
+  CATS.map(c=>`<option value="${esc(c.name)}" ${sel===c.name?"selected":""}>${esc(c.name)} (T${c.tier})</option>`).join("");
+
+/* ---------- vehicle / odometer ---------- */
+function vehicleModal(){
+  openSheet(`<h3>🚗 Kendaraan Baru</h3>
+    <div class="field"><label>Nama kendaraan</label><input id="vn" placeholder="cth: Honda Beat, Avanza Hitam" autocomplete="off"></div>
+    <div class="field"><label>Odometer saat ini (km)</label><input id="vo" inputmode="numeric" placeholder="cth: 12500"><div class="hint">Lihat di speedometer kendaraanmu.</div></div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
+  const vn=$("#vn");vn.focus();$("#c").onclick=closeSheet;
+  $("#ok").onclick=()=>{const name=vn.value.trim();if(!name)return vn.focus();
+    const v={id:uid(),name,odo:clean($("#vo").value),sortMode:"auto",reminders:[]};
+    state.vehicles.push(v);state.selected=v.id;save();render();closeSheet();toast("Kendaraan ditambahkan");};
+}
+function odoModal(){
+  const v=vehicle();
+  openSheet(`<h3>🔢 Update Odometer</h3>
+    <div class="field"><label>Odometer terkini — ${esc(v.name)} (km)</label><input id="oi" inputmode="numeric" value="${v.odo}">
+    <div class="hint">Semua sisa km dihitung ulang otomatis.</div></div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
+  const oi=$("#oi");oi.focus();oi.select();$("#c").onclick=closeSheet;
+  $("#ok").onclick=()=>{const val=clean(oi.value);
+    if(val<v.odo){confirmBox("Odometer turun?",`Angka baru (${nf(val)}) lebih kecil dari sebelumnya (${nf(v.odo)}). Tetap simpan?`,()=>{v.odo=val;save();render();closeSheet();toast("Odometer diperbarui");});return;}
+    v.odo=val;save();render();closeSheet();toast("Odometer diperbarui");};
+}
+
+/* ---------- add / edit reminder (shared form) ---------- */
+function reminderModal(editId){
+  const v=vehicle();const r=editId?findRem(editId):null;const isEdit=!!r;
+  openSheet(`<h3>${isEdit?"✏️ Edit Pengingat":"🔔 Pengingat Baru"}</h3>
+    <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${isEdit?esc(r.name):""}"><div class="err">Nama tidak boleh kosong.</div></div>
+    <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(isEdit?r.category:"")}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
+    <div class="two">
+      <div class="field"><label>Interval km</label><input id="rik" inputmode="numeric" placeholder="cth: 2000" value="${isEdit&&r.intervalKm?r.intervalKm:""}"></div>
+      <div class="field"><label>Interval bulan</label><input id="rim" inputmode="numeric" placeholder="cth: 2" value="${isEdit&&r.intervalMonths?r.intervalMonths:""}"></div>
+    </div>
+    <div class="field" id="fInt"><div class="err">Isi minimal salah satu: interval km atau bulan.</div></div>
+    <div class="two">
+      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${isEdit?r.baseOdo:v.odo}"><div class="err"></div></div>
+      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${isEdit&&r.baseDate?r.baseDate:todayStr()}"><div class="err"></div></div>
+    </div>
+    <div class="hint" style="margin:-6px 0 14px">Default = kondisi sekarang. Tanggal hanya dipakai jika interval bulan diisi.</div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
+  const rn=$("#rn");if(!isEdit)rn.focus();$("#c").onclick=()=>isEdit?detailSheet(editId):closeSheet();
+  $("#ok").onclick=()=>{
+    const name=rn.value.trim();const ik=clean($("#rik").value);const im=clean($("#rim").value);
+    const bo=clean($("#rbo").value);const bd=$("#rbd").value||todayStr();
+    let ok=true;
+    $("#fName").classList.toggle("bad",!name);if(!name)ok=false;
+    $("#fInt").classList.toggle("bad",ik<=0&&im<=0);if(ik<=0&&im<=0)ok=false;
+    // BLOK: mustahil
+    const fBo=$("#fBo"),fBd=$("#fBd");fBo.classList.remove("bad");fBd.classList.remove("bad");
+    if(bo>v.odo){fBo.classList.add("bad");fBo.querySelector(".err").textContent=`Tidak boleh lebih dari odometer kendaraan (${nf(v.odo)} km).`;ok=false;}
+    if(im>0&&diffDays(todayStr(),bd)>0){fBd.classList.add("bad");fBd.querySelector(".err").textContent="Tanggal tidak boleh di masa depan.";ok=false;}
+    if(!ok)return;
+    // TEGUR: mencurigakan (langsung lewat)
+    const overKm=ik>0&&(bo+ik)<=v.odo;
+    const overDate=im>0&&diffDays(addMonths(bd,im),todayStr())>0;
+    const apply=()=>{
+      if(isEdit){r.name=name;r.category=$("#rc").value||null;r.intervalKm=ik;r.intervalMonths=im;r.baseOdo=bo;r.baseDate=im>0?bd:(ik>0?null:bd);}
+      else{const nr={id:uid(),name,category:$("#rc").value||null,intervalKm:ik,intervalMonths:im,baseOdo:bo,baseDate:im>0?bd:null,pinned:false,order:v.reminders.length,logs:[]};v.reminders.push(nr);}
+      save();render();toast(isEdit?"Pengingat diperbarui":"Pengingat ditambahkan");
+      if(isEdit)detailSheet(editId);else closeSheet();
+    };
+    if(overKm||overDate){
+      let msg="Pengaturan ini membuat pengingat langsung berstatus lewat jatuh tempo";
+      if(overKm)msg+=` (lewat ${nf(v.odo-(bo+ik))} km)`;
+      confirmBox("Langsung lewat tempo?",msg+". Yakin angkanya benar?",apply,"Ya, simpan");
+    }else apply();
+  };
+}
+
+/* ---------- catat servis ---------- */
+function serviceModal(id,returnDetail){
+  const v=vehicle();const r=findRem(id);
+  openSheet(`<h3>🛠️ Catat Servis · ${esc(r.name)}</h3>
+    <div class="two">
+      <div class="field"><label>Tanggal servis</label><input id="sd" type="date" value="${todayStr()}"></div>
+      <div class="field"><label>Odometer (km)</label><input id="so" inputmode="numeric" value="${v.odo}"></div>
+    </div>
+    <div class="field"><label>Biaya (opsional, Rp)</label><input id="sc" inputmode="numeric" placeholder="cth: 65000"></div>
+    <div class="field"><label>Catatan (opsional)</label><textarea id="sn" placeholder="cth: Bengkel AHASS Jl. Merdeka, pakai oli MPX2, sekalian cek rem"></textarea></div>
+    <div class="hint" style="margin-top:-6px;margin-bottom:14px">Menyimpan ini akan mereset hitungan km & tanggal untuk siklus berikutnya, dan masuk ke Riwayat.</div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan Servis</button></div>`);
+  $("#c").onclick=()=>returnDetail?detailSheet(id):closeSheet();
+  $("#ok").onclick=()=>{
+    const sd=$("#sd").value||todayStr();const so=clean($("#so").value);const sc=clean($("#sc").value);const sn=$("#sn").value.trim();
+    if(diffDays(todayStr(),sd)>0){toast("Tanggal servis tidak boleh di masa depan");return;}
+    const commit=()=>{
+      r.logs.unshift({id:uid(),date:sd,odo:so,cost:sc,note:sn});
+      r.baseOdo=so;r.baseDate=sd;save();render();toast("Servis dicatat ✓");
+      if(returnDetail)detailSheet(id);else closeSheet();
+    };
+    if(so>v.odo){
+      confirmBox("Perbarui odometer kendaraan?",`Odometer servis (${nf(so)}) lebih tinggi dari odometer kendaraan saat ini (${nf(v.odo)}). Perbarui odometer kendaraan ke ${nf(so)} juga?`,
+        ()=>{v.odo=so;commit();},"Ya, perbarui",{noLabel:"Tidak, simpan saja",onNo:commit});
+      return;
+    }
+    commit();
+  };
+}
+
+/* ---------- detail sheet (show detail lengkap) ---------- */
+function detailSheet(id){
+  const v=vehicle();const r=findRem(id);if(!r)return closeSheet();
+  const st=status(r,v.odo);
+  const col=st.sName==="danger"?"var(--red)":st.sName==="warn"?"var(--orange)":"var(--green)";
+  const rules=[];
+  if(r.intervalKm>0)rules.push(nf(r.intervalKm)+" km");
+  if(r.intervalMonths>0)rules.push(r.intervalMonths+" bulan");
+  const dueKm=st.dueOdo!=null?`<div class="dt-cell"><div class="k">Jatuh tempo · KM</div><div class="v">${nf(st.dueOdo)} km<small>${st.kmRem>0?"sisa "+nf(st.kmRem)+" km":"lewat "+nf(-st.kmRem)+" km"}</small></div></div>`:"";
+  const dueDt=st.dueDate!=null?`<div class="dt-cell"><div class="k">Jatuh tempo · Tanggal</div><div class="v">${fmtD(st.dueDate)}<small>${st.dateRem>0?"sisa "+st.dateRem+" hari":"lewat "+(-st.dateRem)+" hari"}</small></div></div>`:"";
+
+  const logs=r.logs.length?r.logs.map(l=>`
+    <div class="logitem" data-log="${l.id}">
+      <div class="lh"><span class="ldate">${fmtDLong(l.date)}</span><span class="lodo">${nf(l.odo)} km</span></div>
+      ${l.cost?`<div class="lcost">Rp ${nf(l.cost)}</div>`:""}
+      ${l.note?`<div class="lnote">${esc(l.note)}</div>`:""}
+      <div class="lact"><button data-le="${l.id}">Edit</button><button class="x" data-lx="${l.id}">Hapus</button></div>
+    </div>`).join(""):`<div class="emptylog">Belum ada riwayat servis. Tekan "Catat Servis" setelah servis dilakukan.</div>`;
+
+  openSheet(`
+    <div class="dt-head"><h3 style="margin:0">${r.pinned?'<span class="pinmark">📌</span> ':""}${esc(r.name)}</h3>
+      <span class="badge" style="color:${col};background:rgba(255,255,255,.06)">${st.label}</span></div>
+    <span class="meta" style="font-family:var(--mono);font-size:11.5px;color:var(--faint)">Interval: ${rules.join(" / ")||"—"}${r.category?" · "+esc(r.category)+" (T"+tierOf(r)+")":" · prioritas T"+tierOf(r)}</span>
+    <div class="dt-grid">
+      <div class="dt-cell"><div class="k">Terakhir diganti · KM</div><div class="v">${nf(r.baseOdo)} km</div></div>
+      <div class="dt-cell"><div class="k">Terakhir diganti · Tgl</div><div class="v">${fmtD(r.baseDate)}</div></div>
+      ${dueKm}${dueDt}
+    </div>
+    <div class="bar"><i style="width:${st.pct}%;background:${col}"></i></div>
+    <div class="row" style="margin:14px 0 18px">
+      <button class="btn primary" id="dDone">🛠️ Catat Servis</button>
+      <button class="btn ghost" id="dEdit">✏️ Edit</button>
+    </div>
+    <h2 style="font-family:var(--mono);font-size:11px;letter-spacing:.24em;color:var(--muted);text-transform:uppercase;margin:0 0 12px">Riwayat Servis (${r.logs.length})</h2>
+    ${logs}
+    <button class="mini" id="dDel" style="margin:18px auto 4px;display:block;color:var(--red);border-color:rgba(255,93,82,.25);padding:9px 14px">Hapus pengingat ini</button>
+    <div class="row" style="margin-top:14px"><button class="btn ghost" id="dClose">Tutup</button></div>`);
+  $("#dClose").onclick=closeSheet;
+  $("#dDone").onclick=()=>serviceModal(id,true);
+  $("#dEdit").onclick=()=>reminderModal(id);
+  $("#dDel").onclick=()=>confirmBox("Hapus pengingat?",`"${r.name}" beserta ${r.logs.length} riwayatnya akan dihapus.`,()=>{
+    v.reminders=v.reminders.filter(x=>x.id!==id);save();render();closeSheet();toast("Pengingat dihapus");},"Ya, hapus");
+  r.logs.forEach(l=>{
+    $("#sheet").querySelector(`[data-lx="${l.id}"]`).onclick=()=>confirmBox("Hapus catatan servis?",`Entri ${fmtD(l.date)} akan dihapus.`,()=>{
+      r.logs=r.logs.filter(x=>x.id!==l.id);save();render();detailSheet(id);toast("Catatan dihapus");},"Ya, hapus");
+    $("#sheet").querySelector(`[data-le="${l.id}"]`).onclick=()=>logEditModal(id,l.id);
+  });
+}
+
+function logEditModal(rid,lid){
+  const r=findRem(rid);const l=r.logs.find(x=>x.id===lid);if(!l)return;
+  openSheet(`<h3>✏️ Edit Catatan Servis</h3>
+    <div class="two"><div class="field"><label>Tanggal</label><input id="ed" type="date" value="${l.date}"></div>
+      <div class="field"><label>Odometer (km)</label><input id="eo" inputmode="numeric" value="${l.odo}"></div></div>
+    <div class="field"><label>Biaya (Rp)</label><input id="ec" inputmode="numeric" value="${l.cost||""}"></div>
+    <div class="field"><label>Catatan</label><textarea id="en">${esc(l.note||"")}</textarea></div>
+    <div class="hint" style="margin-top:-6px;margin-bottom:14px">Catatan: ini hanya mengubah riwayat, tidak mengubah acuan hitung berjalan.</div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
+  $("#c").onclick=()=>detailSheet(rid);
+  $("#ok").onclick=()=>{const d=$("#ed").value||l.date;
+    if(diffDays(todayStr(),d)>0){toast("Tanggal tidak boleh di masa depan");return;}
+    l.date=d;l.odo=clean($("#eo").value);l.cost=clean($("#ec").value);l.note=$("#en").value.trim();
+    save();render();detailSheet(rid);toast("Catatan diperbarui");};
+}
+
+/* ---------- vehicle delete ---------- */
+function delVehicle(id){
+  const v=state.vehicles.find(x=>x.id===id);if(!v)return;
+  confirmBox("Hapus kendaraan?",`"${v.name}" beserta semua pengingat & riwayatnya akan dihapus.`,()=>{
+    state.vehicles=state.vehicles.filter(x=>x.id!==id);
+    state.selected=state.vehicles[0]?state.vehicles[0].id:null;save();render();toast("Kendaraan dihapus");},"Ya, hapus");
+}
+
+/* ---------- menu / export / import ---------- */
+$("#menuBtn").onclick=()=>{
+  openSheet(`<h3 style="margin-bottom:6px">Menu</h3>
+    <button class="menu-item" id="exp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Export data (backup)<small>Simpan semua data ke file .json</small></span></button>
+    <button class="menu-item" id="imp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg><span>Import data<small>Pulihkan dari file backup .json</small></span></button>
+    <button class="menu-item" id="about"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg><span>Tentang & tips backup<small>Kenapa export rutin itu penting</small></span></button>`);
+  $("#exp").onclick=()=>{closeSheet();doExport();};
+  $("#imp").onclick=()=>{closeSheet();$("#fileInput").click();};
+  $("#about").onclick=()=>{closeSheet();aboutModal();};
+};
+function doExport(){
+  const data=JSON.stringify({app:"garasi-log",version:2,exportedAt:new Date().toISOString(),state},null,2);
+  const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
+  const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
+  const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);toast("Backup diunduh");
+}
+$("#fileInput").addEventListener("change",e=>{
+  const f=e.target.files[0];if(!f)return;const rd=new FileReader();
+  rd.onload=()=>{try{
+    const obj=JSON.parse(rd.result);
+    const inc=obj.state&&Array.isArray(obj.state.vehicles)?obj.state:(Array.isArray(obj.vehicles)?obj:null);
+    if(!inc)throw 0;const n=inc.vehicles.length;
+    confirmBox("Ganti semua data?",`File berisi ${n} kendaraan. Data saat ini akan diganti seluruhnya.`,()=>{
+      state=migrate(inc);save();render();toast(`Berhasil impor ${n} kendaraan`);},"Ya, ganti");
+  }catch(err){toast("File tidak valid / bukan backup Garasi Log");}finally{e.target.value="";}};
+  rd.readAsText(f);
+});
+function aboutModal(){
+  openSheet(`<h3>ℹ️ Tentang Garasi Log</h3>
+    <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:-4px 0 14px">Aplikasi offline. Semua data disimpan <b style="color:var(--text)">di perangkat ini saja</b> — tidak ada server, tidak dikirim ke mana pun.</p>
+    <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 16px">⚠️ Data bisa hilang jika kamu menghapus data situs. Biasakan <b style="color:var(--amber)">Export backup</b> rutin lalu simpan file .json-nya di Google Drive.</p>
+    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 2 · pengingat hybrid km + bulan, riwayat servis, prioritas otomatis.</p>
+    <div class="row"><button class="btn primary" id="c">Mengerti</button></div>`);
+  $("#c").onclick=closeSheet;
+}
+
+/* ---------- toast ---------- */
+let tT;function toast(m){const t=$("#toast");t.textContent=m;t.classList.add("show");clearTimeout(tT);tT=setTimeout(()=>t.classList.remove("show"),2600);}
+
+/* ---------- PWA ---------- */
+let dp=null;
+window.addEventListener("beforeinstallprompt",e=>{e.preventDefault();dp=e;if(!localStorage.getItem("install-dismissed"))$("#install").classList.add("show");});
+$("#installBtn").onclick=async()=>{if(!dp)return;dp.prompt();await dp.userChoice;dp=null;$("#install").classList.remove("show");};
+$("#installX").onclick=()=>{$("#install").classList.remove("show");localStorage.setItem("install-dismissed","1");};
+window.addEventListener("appinstalled",()=>{$("#install").classList.remove("show");toast("Terpasang ✓");});
+async function initStorage(){try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist();}catch(e){}}
+if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("./sw.js").catch(()=>{}));
+
+/* ---------- boot ---------- */
+load();render();initStorage();
+</script>
+</body>
+</html>
