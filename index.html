@@ -72,7 +72,8 @@
   .readout .num{font-family:var(--mono);font-weight:700;font-size:clamp(38px,11.5vw,56px);line-height:1;
     color:var(--amber);text-shadow:0 0 22px rgba(255,196,84,.35);letter-spacing:.02em;font-variant-numeric:tabular-nums}
   .readout .unit{font-family:var(--mono);font-size:16px;color:var(--amber-dim);letter-spacing:.15em}
-  .odo .editbtn{position:absolute;top:16px;right:16px;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+  .odo-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .odo .editbtn{flex:0 0 auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
     color:var(--amber);background:rgba(255,196,84,.08);border:1px solid var(--line2);padding:7px 12px;border-radius:9px;
     cursor:pointer;display:flex;align-items:center;gap:6px;text-transform:uppercase}
   .odo .editbtn:active{transform:scale(.95)}
@@ -370,9 +371,9 @@ function renderMain(){
     $("#firstAdd").onclick=()=>vehicleModal();return;
   }
   const odo=document.createElement("div");odo.className="odo";
-  odo.innerHTML=`<div class="lbl">Odometer · ${esc(v.name)}</div>
-    <div class="readout"><span class="num">${nf(v.odo)}</span><span class="unit">KM</span></div>
-    <button class="editbtn" id="editOdo"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Ubah</button>`;
+  odo.innerHTML=`<div class="odo-top"><div class="lbl">Odometer · ${esc(v.name)}</div>
+    <button class="editbtn" id="editOdo"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg> Ubah</button></div>
+    <div class="readout"><span class="num">${nf(v.odo)}</span><span class="unit">KM</span></div>`;
   m.appendChild(odo);
   odo.querySelector("#editOdo").onclick=()=>odoModal();
 
