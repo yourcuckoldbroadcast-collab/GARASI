@@ -124,6 +124,23 @@
   .addrem{width:100%;border:1px dashed var(--line2);background:transparent;color:var(--amber);border-radius:14px;
     padding:14px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:2px}
   .addrem:active{transform:scale(.98)}
+  .addquick{width:100%;border:1px solid rgba(255,196,84,.35);background:rgba(255,196,84,.08);color:var(--amber);
+    border-radius:14px;padding:14px;font-size:14.5px;font-weight:700;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;gap:8px;margin-bottom:10px}
+  .addquick:active{transform:scale(.98)}
+  .qa-info{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;
+    font-size:12.5px;color:var(--muted);line-height:1.55}
+  .qa-info b{color:var(--text)}
+  .qa-info ul{margin:8px 0 8px;padding-left:18px}
+  .qa-info li{margin:3px 0;color:var(--text)}
+  .qa-info .kw{color:var(--faint);font-family:var(--mono);font-size:11px}
+  .qa-chips{display:flex;flex-wrap:wrap;gap:7px;margin:2px 0 16px}
+  .qa-chip{font-family:var(--mono);font-size:11px;padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.05);
+    color:var(--faint);border:1px solid var(--line)}
+  .qa-chip.on{color:var(--text);border-color:rgba(65,217,127,.4);background:rgba(65,217,127,.08)}
+  .qa-chip.on b{color:var(--green)}
+  #qaInfo{margin-left:auto;font-size:12px;color:var(--amber);background:rgba(255,196,84,.08);
+    border:1px solid var(--line2);border-radius:8px;padding:5px 10px;cursor:pointer;font-weight:600}
 
   .empty{text-align:center;padding:54px 24px;color:var(--muted)}
   .empty .big{width:72px;height:72px;margin:0 auto 18px;border-radius:20px;display:grid;place-items:center;
@@ -273,6 +290,50 @@ function tierOf(r){
   for(const c of CATS){for(const k of c.kw){if(k&&n.includes(k))return c.tier;}}
   return 4;
 }
+function catMatch(name){
+  const n=(name||"").toLowerCase();
+  for(const c of CATS){for(const k of c.kw){if(k&&n.includes(k))return c.name;}}
+  return "";
+}
+/* ---- quick-add parser ("bebas dalam koridor") ---- */
+const MROOT={jan:1,feb:2,mar:3,apr:4,mei:5,jun:6,jul:7,agu:8,ags:8,agt:8,sep:9,okt:10,nov:11,des:12};
+function parseQuickAdd(text){
+  const orig=(text||"").trim();
+  const low=orig.toLowerCase();
+  let intervalKm=0,intervalMonths=0,baseDate=null;
+  const cuts=[];
+  // relative date
+  const rel={"hari ini":0,"kemarin":-1,"besok":1,"lusa":2};
+  for(const k in rel){const i=low.indexOf(k);if(i>=0){const d=new Date();d.setDate(d.getDate()+rel[k]);baseDate=ymd(d);cuts.push(i);break;}}
+  // named month: dd month [yyyy]
+  if(!baseDate){
+    const m=low.match(/\b(\d{1,2})\s+(jan|feb|mar|apr|mei|jun|jul|agu|ags|agt|sep|okt|nov|des)[a-z]*\.?(?:\s+(\d{4}))?/);
+    if(m){const day=+m[1],mo=MROOT[m[2]],yr=m[3]?+m[3]:new Date().getFullYear();
+      if(day>=1&&day<=31&&mo){baseDate=yr+"-"+pad(mo)+"-"+pad(day);cuts.push(m.index);}}
+  }
+  // numeric dd/mm/yyyy
+  if(!baseDate){
+    const m=low.match(/\b(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})\b/);
+    if(m){let y=+m[3];if(y<100)y+=2000;baseDate=y+"-"+pad(+m[2])+"-"+pad(+m[1]);cuts.push(m.index);}
+  }
+  // km
+  let m=low.match(/(\d[\d.\s]*)\s*(rb|ribu)?\s*(?:km|kilometer|kilo)\b/);
+  if(m){let num=clean(m[1]);if(m[2])num*=1000;intervalKm=num;cuts.push(m.index);}
+  // months (or tahun -> x12)
+  m=low.match(/(\d+)\s*(?:bulan|bln)\b/);
+  if(m){intervalMonths=+m[1];cuts.push(m.index);}
+  else{const my=low.match(/(\d+)\s*(?:tahun|thn)\b/);if(my){intervalMonths=(+my[1])*12;cuts.push(my.index);}}
+  // trigger words mark where structured part begins
+  ["tanggal","tgl","target","tiap","setiap"].forEach(w=>{const i=low.indexOf(w);if(i>=0)cuts.push(i);});
+  // name = text before earliest structured token
+  const cut=cuts.length?Math.min(...cuts):orig.length;
+  let name=orig.slice(0,cut).replace(/[\s,;:.\-]+$/,"").trim();
+  name=name.replace(/^(tolong\s+)?(tambah(kan)?|buat(kan)?|bikin|ingatkan|reminder|pengingat)\s+/i,"").trim();
+  name=name.replace(/\b(dengan|dgn|dan|atau|untuk|setiap|tiap)\s*$/i,"").trim();
+  const category=catMatch(name);
+  return {name,category,intervalKm,intervalMonths,baseDate,
+    caught:{name:!!name,km:intervalKm>0,months:intervalMonths>0,date:!!baseDate}};
+}
 
 let state={vehicles:[],selected:null};
 
@@ -394,6 +455,8 @@ function renderMain(){
   sortedReminders(v).forEach(r=>wrap.appendChild(remCard(r,v)));
   if(v.sortMode==="manual")enableDrag(wrap,v);
 
+  const qa=document.createElement("button");qa.className="addquick";qa.innerHTML="⚡ Tambah Cepat";
+  qa.onclick=()=>quickAddModal();m.appendChild(qa);
   const add=document.createElement("button");add.className="addrem";add.innerHTML="＋ Tambah Pengingat";
   add.onclick=()=>reminderModal();m.appendChild(add);
 
@@ -519,19 +582,25 @@ function odoModal(){
 }
 
 /* ---------- add / edit reminder (shared form) ---------- */
-function reminderModal(editId){
-  const v=vehicle();const r=editId?findRem(editId):null;const isEdit=!!r;
+function reminderModal(editId,prefill){
+  const v=vehicle();const r=editId?findRem(editId):null;const isEdit=!!r;const P=prefill||{};
+  const initName=isEdit?r.name:(P.name||"");
+  const initCat=isEdit?r.category:(P.category||"");
+  const initIk=isEdit?(r.intervalKm||""):(P.intervalKm||"");
+  const initIm=isEdit?(r.intervalMonths||""):(P.intervalMonths||"");
+  const initBo=isEdit?r.baseOdo:v.odo;
+  const initBd=(isEdit&&r.baseDate)?r.baseDate:(P.baseDate||todayStr());
   openSheet(`<h3>${isEdit?"✏️ Edit Pengingat":"🔔 Pengingat Baru"}</h3>
-    <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${isEdit?esc(r.name):""}"><div class="err">Nama tidak boleh kosong.</div></div>
-    <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(isEdit?r.category:"")}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
+    <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${esc(initName)}"><div class="err">Nama tidak boleh kosong.</div></div>
+    <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(initCat)}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
     <div class="two">
-      <div class="field"><label>Interval km</label><input id="rik" inputmode="numeric" placeholder="cth: 2000" value="${isEdit&&r.intervalKm?r.intervalKm:""}"></div>
-      <div class="field"><label>Interval bulan</label><input id="rim" inputmode="numeric" placeholder="cth: 2" value="${isEdit&&r.intervalMonths?r.intervalMonths:""}"></div>
+      <div class="field"><label>Interval km</label><input id="rik" inputmode="numeric" placeholder="cth: 2000" value="${initIk}"></div>
+      <div class="field"><label>Interval bulan</label><input id="rim" inputmode="numeric" placeholder="cth: 2" value="${initIm}"></div>
     </div>
     <div class="field" id="fInt"><div class="err">Isi minimal salah satu: interval km atau bulan.</div></div>
     <div class="two">
-      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${isEdit?r.baseOdo:v.odo}"><div class="err"></div></div>
-      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${isEdit&&r.baseDate?r.baseDate:todayStr()}"><div class="err"></div></div>
+      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${initBo}"><div class="err"></div></div>
+      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${initBd}"><div class="err"></div></div>
     </div>
     <div class="hint" style="margin:-6px 0 14px">Default = kondisi sekarang. Tanggal hanya dipakai jika interval bulan diisi.</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
@@ -561,6 +630,45 @@ function reminderModal(editId){
       if(overKm)msg+=` (lewat ${nf(v.odo-(bo+ik))} km)`;
       confirmBox("Langsung lewat tempo?",msg+". Yakin angkanya benar?",apply,"Ya, simpan");
     }else apply();
+  };
+}
+
+/* ---------- tambah cepat (parser + prefill) ---------- */
+function quickAddModal(){
+  const seen=localStorage.getItem("qa-info-seen");
+  openSheet(`<h3>⚡ Tambah Cepat <button id="qaInfo">ℹ️ Contoh</button></h3>
+    <div class="qa-info" id="qaEx" style="display:${seen?"none":"block"}">
+      Sebutkan <b>nama servis di depan</b>, lalu tambahkan yang perlu — urutan bebas:
+      <ul>
+        <li>Oli Mesin target 2000 km atau 2 bulan</li>
+        <li>Ganti Ban tanggal 27 Mei 2026 tiap 10000 km</li>
+        <li>Servis CVT tiap 8000 km, terakhir hari ini</li>
+      </ul>
+      <span class="kw">Dikenali: km/kilometer · bulan · nama bulan + tanggal · "hari ini/kemarin".</span> Sisanya bisa kamu lengkapi di layar berikutnya.
+    </div>
+    <div class="field"><label>Ucapkan atau ketik</label>
+      <textarea id="qaText" placeholder="cth: Ganti Oli Mesin tanggal 27 Mei 2026 target 2000 km atau 2 bulan"></textarea>
+      <div class="hint">Untuk suara: tap tombol mikrofon di keyboard HP-mu, lalu dikte kalimatnya.</div></div>
+    <div class="qa-chips" id="qaChips"></div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Lanjut →</button></div>`);
+  const t=$("#qaText");t.focus();const chips=$("#qaChips");
+  const chip=(lbl,val,on)=>`<span class="qa-chip ${on?"on":""}">${lbl}: ${on?esc(val)+" <b>✓</b>":"—"}</span>`;
+  function upd(){
+    const p=parseQuickAdd(t.value);
+    chips.innerHTML=
+      chip("Nama",p.name+(p.category?" · "+p.category:""),p.caught.name)+
+      chip("KM",nf(p.intervalKm)+" km",p.caught.km)+
+      chip("Bulan",p.intervalMonths+" bln",p.caught.months)+
+      chip("Tanggal",fmtD(p.baseDate),p.caught.date);
+  }
+  t.addEventListener("input",upd);upd();
+  $("#qaInfo").onclick=()=>{const e=$("#qaEx");e.style.display=(e.style.display==="none")?"block":"none";};
+  $("#c").onclick=closeSheet;
+  $("#ok").onclick=()=>{
+    const p=parseQuickAdd(t.value);
+    if(!(p.caught.name||p.caught.km||p.caught.months||p.caught.date)){t.focus();toast("Ketik atau ucapkan kalimatnya dulu");return;}
+    localStorage.setItem("qa-info-seen","1");
+    reminderModal(null,p);
   };
 }
 
