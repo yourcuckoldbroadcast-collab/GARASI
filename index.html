@@ -125,6 +125,7 @@
     padding:14px;font-size:14px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;margin-top:2px}
   .addrem:active{transform:scale(.98)}
 
+
   .empty{text-align:center;padding:54px 24px;color:var(--muted)}
   .empty .big{width:72px;height:72px;margin:0 auto 18px;border-radius:20px;display:grid;place-items:center;
     background:radial-gradient(circle at 50% 35%,#2b241a,#15110c);border:1px solid var(--line2)}
@@ -250,28 +251,50 @@ const fmtD=s=>{if(!s)return "—";const d=parseD(s);return d.getDate()+" "+MON[d
 const fmtDLong=s=>{if(!s)return "—";const d=parseD(s);return DAYL[d.getDay()]+", "+d.getDate()+" "+MONL[d.getMonth()]+" "+d.getFullYear();};
 
 /* ---- categories / priority ---- */
-const CATS=[
-  {name:"Oli Mesin",tier:1,kw:["oli mesin"]},
-  {name:"Oli Gardan",tier:1,kw:["gardan","garda"]},
-  {name:"Oli Transmisi/Matic",tier:1,kw:["transmisi","matic"]},
-  {name:"Rem (minyak/kampas)",tier:1,kw:["rem","kampas rem","minyak rem"]},
-  {name:"CVT / V-belt",tier:2,kw:["cvt","v-belt","vbelt","v belt"]},
-  {name:"Rantai",tier:2,kw:["rantai"]},
-  {name:"Kopling",tier:2,kw:["kopling"]},
-  {name:"Aki",tier:2,kw:["aki","accu"]},
-  {name:"Filter Oli",tier:2,kw:["filter oli"]},
-  {name:"Ban",tier:3,kw:["ban"]},
-  {name:"Busi",tier:3,kw:["busi"]},
-  {name:"Filter Udara",tier:3,kw:["filter udara"]},
-  {name:"Filter Bensin",tier:3,kw:["filter bensin","filter bahan bakar"]},
-  {name:"Radiator/Coolant",tier:3,kw:["radiator","coolant"]},
-  {name:"Lainnya",tier:4,kw:[]}
+const GRADE_ORDER={S:0,A:1,B:2,Null:3};
+const gradeRank=g=>GRADE_ORDER[g]!=null?GRADE_ORDER[g]:3;
+// Kamus terlengkap: Motor Matic (mesin uji beta = Scoopy 2019)
+const DICT_MATIC_MOTOR=[
+  {name:"Oli Mesin",tier:"S",kw:["oli mesin"]},
+  {name:"Oli Gardan / Gear Oil",tier:"S",kw:["gardan","gear oil","oli gardan"]},
+  {name:"Filter Udara",tier:"S",kw:["filter udara"]},
+  {name:"CVT Cleaning",tier:"S",kw:["cvt"]},
+  {name:"V-Belt",tier:"S",kw:["v-belt","vbelt","v belt","belt"]},
+  {name:"Roller",tier:"S",kw:["roller"]},
+  {name:"Ban (Depan/Belakang)",tier:"S",kw:["ban"]},
+  {name:"Kampas Rem",tier:"S",kw:["kampas rem","kampas"]},
+  {name:"Aki",tier:"S",kw:["aki","accu"]},
+  {name:"Busi",tier:"A",kw:["busi"]},
+  {name:"Minyak Rem",tier:"A",kw:["minyak rem"]},
+  {name:"Shockbreaker",tier:"A",kw:["shockbreaker","shock breaker"]},
+  {name:"Shock Depan / Oli Shock",tier:"A",kw:["oli shock","shock depan","sok depan","shock","sok"]},
+  {name:"Filter Bensin / Fuel Pump",tier:"B",kw:["filter bensin","fuel pump","filter bahan bakar"]},
+  {name:"Seal Oli",tier:"B",kw:["seal oli","seal"]},
+  {name:"Setelan Grip Rem",tier:"B",kw:["grip rem","setelan grip","setelan rem"]},
+  {name:"Setelan Kabel Gas",tier:"B",kw:["kabel gas","setelan kabel","setelan gas"]},
+  {name:"Lainnya / Misc",tier:"Null",kw:[]}
 ];
-function tierOf(r){
-  if(r.category){const c=CATS.find(c=>c.name===r.category);if(c)return c.tier;}
+// Kamus default sementara utk tipe lain (akan di-upgrade tester kemudian)
+const DICT_DEFAULT=[
+  {name:"Oli Mesin",tier:"S",kw:["oli mesin"]},
+  {name:"Ban",tier:"S",kw:["ban"]},
+  {name:"Rem (kampas/minyak)",tier:"S",kw:["kampas rem","minyak rem","rem"]},
+  {name:"Aki",tier:"S",kw:["aki","accu"]},
+  {name:"Filter Udara",tier:"S",kw:["filter udara"]},
+  {name:"Busi",tier:"A",kw:["busi"]},
+  {name:"Filter Bensin / Fuel Pump",tier:"B",kw:["filter bensin","fuel pump"]},
+  {name:"Lainnya / Misc",tier:"Null",kw:[]}
+];
+function dictFor(v){
+  const key=((v&&v.vtype)||"")+"-"+((v&&v.trans)||"");
+  return key==="motor-matic"?DICT_MATIC_MOTOR:DICT_DEFAULT;
+}
+function tierOf(r,v){
+  const cats=dictFor(v);
+  if(r.category){const c=cats.find(c=>c.name===r.category);if(c)return c.tier;}
   const n=(r.name||"").toLowerCase();
-  for(const c of CATS){for(const k of c.kw){if(k&&n.includes(k))return c.tier;}}
-  return 4;
+  for(const c of cats){for(const k of c.kw){if(k&&n.includes(k))return c.tier;}}
+  return "Null";
 }
 
 let state={vehicles:[],selected:null};
@@ -283,6 +306,8 @@ function migrate(s){
   s.vehicles.forEach(v=>{
     v.odo=clean(v.odo);
     if(v.sortMode!=="manual")v.sortMode="auto";
+    if(!v.vtype)v.vtype="motor";
+    if(!v.trans)v.trans="matic";
     if(!Array.isArray(v.reminders))v.reminders=[];
     v.reminders.forEach((r,ri)=>{
       if(r.intervalKm==null&&r.interval!=null)r.intervalKm=clean(r.interval);
@@ -297,6 +322,7 @@ function migrate(s){
       if(r.order==null)r.order=ri;
       if(!Array.isArray(r.logs))r.logs=[];
       if(r.category===undefined)r.category=null;
+      if(r.category&&!dictFor(v).some(c=>c.name===r.category))r.category=null;
       r.id=r.id||uid();
     });
   });
@@ -342,8 +368,8 @@ function sortedReminders(v){
     if((b.pinned?1:0)!==(a.pinned?1:0))return (b.pinned?1:0)-(a.pinned?1:0);
     const sa=status(a,v.odo),sb=status(b,v.odo);
     if(sa.sev!==sb.sev)return sa.sev-sb.sev;       // urgensi menang (danger=0 dulu)
-    const ta=tierOf(a),tb=tierOf(b);
-    if(ta!==tb)return ta-tb;                        // prioritas jenis (tier 1 dulu)
+    const ta=gradeRank(tierOf(a,v)),tb=gradeRank(tierOf(b,v));
+    if(ta!==tb)return ta-tb;                        // prioritas jenis (S dulu)
     return sb.pct-sa.pct;                           // progres lebih tinggi dulu
   });
 }
@@ -384,9 +410,12 @@ function renderMain(){
   sect.querySelector("#sA").onclick=()=>{v.sortMode="auto";save();render();};
   sect.querySelector("#sM").onclick=()=>{normalizeOrder(v);v.sortMode="manual";save();render();};
 
+  const add=document.createElement("button");add.className="addrem";add.innerHTML="＋ Tambah Pengingat";
+  add.style.marginBottom="14px";add.onclick=()=>reminderModal();m.appendChild(add);
+
   if(v.reminders.length===0){
-    const e=document.createElement("div");e.className="empty";e.style.padding="26px 10px";
-    e.innerHTML=`<p style="margin-bottom:16px">Belum ada pengingat. Tambahkan misalnya "Ganti Oli Mesin" tiap 2.000 km / 2 bulan.</p>`;
+    const e=document.createElement("div");e.className="empty";e.style.padding="20px 10px 6px";
+    e.innerHTML=`<p style="margin:0">Belum ada pengingat. Tekan tombol di atas, mis. "Ganti Oli Mesin" tiap 2.000 km / 2 bulan.</p>`;
     m.appendChild(e);
   }
 
@@ -394,11 +423,12 @@ function renderMain(){
   sortedReminders(v).forEach(r=>wrap.appendChild(remCard(r,v)));
   if(v.sortMode==="manual")enableDrag(wrap,v);
 
-  const add=document.createElement("button");add.className="addrem";add.innerHTML="＋ Tambah Pengingat";
-  add.onclick=()=>reminderModal();m.appendChild(add);
+  const evb=document.createElement("button");evb.className="mini";
+  evb.style.cssText="margin:28px auto 0;display:block;padding:9px 16px";
+  evb.innerHTML="✏️ Edit kendaraan";evb.onclick=()=>vehicleModal(v.id);m.appendChild(evb);
 
   const dv=document.createElement("button");dv.className="mini del";
-  dv.style.cssText="margin:24px auto 0;display:block;padding:9px 14px;color:var(--red);border-color:rgba(255,93,82,.25)";
+  dv.style.cssText="margin:10px auto 0;display:block;padding:9px 14px;color:var(--red);border-color:rgba(255,93,82,.25)";
   dv.textContent="Hapus kendaraan ini";dv.onclick=()=>delVehicle(v.id);m.appendChild(dv);
 }
 
@@ -492,19 +522,41 @@ $("#cfN").onclick=()=>{cfHide();const f=cfNo;cfYes=null;cfNo=null;if(f)f();};
 $("#cfY").onclick=()=>{cfHide();const f=cfYes;cfYes=null;cfNo=null;if(f)f();};
 $("#cf").addEventListener("click",e=>{if(e.target.id==="cf"){cfHide();cfYes=null;cfNo=null;}});
 
-const catOptions=sel=>`<option value="">— pilih / kosongkan —</option>`+
-  CATS.map(c=>`<option value="${esc(c.name)}" ${sel===c.name?"selected":""}>${esc(c.name)} (T${c.tier})</option>`).join("");
+const catOptions=(sel,v)=>`<option value="">— pilih / kosongkan —</option>`+
+  dictFor(v).map(c=>`<option value="${esc(c.name)}" ${sel===c.name?"selected":""}>${esc(c.name)} · ${c.tier}</option>`).join("");
 
 /* ---------- vehicle / odometer ---------- */
-function vehicleModal(){
-  openSheet(`<h3>🚗 Kendaraan Baru</h3>
-    <div class="field"><label>Nama kendaraan</label><input id="vn" placeholder="cth: Honda Beat, Avanza Hitam" autocomplete="off"></div>
-    <div class="field"><label>Odometer saat ini (km)</label><input id="vo" inputmode="numeric" placeholder="cth: 12500"><div class="hint">Lihat di speedometer kendaraanmu.</div></div>
-    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
-  const vn=$("#vn");vn.focus();$("#c").onclick=closeSheet;
-  $("#ok").onclick=()=>{const name=vn.value.trim();if(!name)return vn.focus();
-    const v={id:uid(),name,odo:clean($("#vo").value),sortMode:"auto",reminders:[]};
-    state.vehicles.push(v);state.selected=v.id;save();render();closeSheet();toast("Kendaraan ditambahkan");};
+function vehicleModal(editId){
+  const isEdit=!!editId;const ev=isEdit?state.vehicles.find(x=>x.id===editId):null;
+  const sel=(a,b)=>a===b?"selected":"";
+  const vt=isEdit?ev.vtype:"motor",vtr=isEdit?ev.trans:"matic";
+  openSheet(`<h3>${isEdit?"✏️ Edit Kendaraan":"🚗 Kendaraan Baru"}</h3>
+    <div class="field"><label>Nama kendaraan</label><input id="vn" placeholder="cth: Honda Scoopy, Avanza Hitam" autocomplete="off" value="${isEdit?esc(ev.name):""}"></div>
+    <div class="two">
+      <div class="field"><label>Jenis</label><select id="vt"><option value="motor" ${sel("motor",vt)}>Motor</option><option value="mobil" ${sel("mobil",vt)}>Mobil</option></select></div>
+      <div class="field"><label>Transmisi</label><select id="vtr"><option value="matic" ${sel("matic",vtr)}>Matic</option><option value="manual" ${sel("manual",vtr)}>Manual</option></select></div>
+    </div>
+    ${isEdit?"":`<div class="field"><label>Odometer saat ini (km)</label><input id="vo" inputmode="numeric" placeholder="cth: 12500"></div>`}
+    <div class="hint" style="margin:-4px 0 14px">Kamus prioritas servis menyesuaikan jenis & transmisi. Saat ini kamus terlengkap untuk <b>Motor Matic</b>; tipe lain memakai versi default sementara.</div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
+  const vn=$("#vn");if(!isEdit)vn.focus();$("#c").onclick=closeSheet;
+  $("#ok").onclick=()=>{
+    const name=vn.value.trim();if(!name)return vn.focus();
+    const nt=$("#vt").value,ntr=$("#vtr").value;
+    if(isEdit){
+      const lost=ev.reminders.filter(r=>r.category&&!dictFor({vtype:nt,trans:ntr}).some(c=>c.name===r.category)).length;
+      const apply=()=>{
+        ev.name=name;ev.vtype=nt;ev.trans=ntr;
+        ev.reminders.forEach(r=>{if(r.category&&!dictFor(ev).some(c=>c.name===r.category))r.category=null;});
+        save();render();closeSheet();toast("Kendaraan diperbarui");
+      };
+      if(lost>0)confirmBox("Ubah jenis kendaraan?",`Kamus prioritas ikut berganti. ${lost} kategori yang sudah diatur tidak ada di kamus baru dan akan dikosongkan — reminder & riwayat tetap aman, prioritas dihitung ulang otomatis dari nama servis.`,apply,"Ya, ubah");
+      else apply();
+    }else{
+      const v={id:uid(),name,vtype:nt,trans:ntr,odo:clean($("#vo").value),sortMode:"auto",reminders:[]};
+      state.vehicles.push(v);state.selected=v.id;save();render();closeSheet();toast("Kendaraan ditambahkan");
+    }
+  };
 }
 function odoModal(){
   const v=vehicle();
@@ -519,19 +571,25 @@ function odoModal(){
 }
 
 /* ---------- add / edit reminder (shared form) ---------- */
-function reminderModal(editId){
-  const v=vehicle();const r=editId?findRem(editId):null;const isEdit=!!r;
+function reminderModal(editId,prefill){
+  const v=vehicle();const r=editId?findRem(editId):null;const isEdit=!!r;const P=prefill||{};
+  const initName=isEdit?r.name:(P.name||"");
+  const initCat=isEdit?r.category:(P.category||"");
+  const initIk=isEdit?(r.intervalKm||""):(P.intervalKm||"");
+  const initIm=isEdit?(r.intervalMonths||""):(P.intervalMonths||"");
+  const initBo=isEdit?r.baseOdo:v.odo;
+  const initBd=(isEdit&&r.baseDate)?r.baseDate:(P.baseDate||todayStr());
   openSheet(`<h3>${isEdit?"✏️ Edit Pengingat":"🔔 Pengingat Baru"}</h3>
-    <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${isEdit?esc(r.name):""}"><div class="err">Nama tidak boleh kosong.</div></div>
-    <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(isEdit?r.category:"")}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
+    <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${esc(initName)}"><div class="err">Nama tidak boleh kosong.</div></div>
+    <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(initCat,v)}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
     <div class="two">
-      <div class="field"><label>Interval km</label><input id="rik" inputmode="numeric" placeholder="cth: 2000" value="${isEdit&&r.intervalKm?r.intervalKm:""}"></div>
-      <div class="field"><label>Interval bulan</label><input id="rim" inputmode="numeric" placeholder="cth: 2" value="${isEdit&&r.intervalMonths?r.intervalMonths:""}"></div>
+      <div class="field"><label>Interval km</label><input id="rik" inputmode="numeric" placeholder="cth: 2000" value="${initIk}"></div>
+      <div class="field"><label>Interval bulan</label><input id="rim" inputmode="numeric" placeholder="cth: 2" value="${initIm}"></div>
     </div>
     <div class="field" id="fInt"><div class="err">Isi minimal salah satu: interval km atau bulan.</div></div>
     <div class="two">
-      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${isEdit?r.baseOdo:v.odo}"><div class="err"></div></div>
-      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${isEdit&&r.baseDate?r.baseDate:todayStr()}"><div class="err"></div></div>
+      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${initBo}"><div class="err"></div></div>
+      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${initBd}"><div class="err"></div></div>
     </div>
     <div class="hint" style="margin:-6px 0 14px">Default = kondisi sekarang. Tanggal hanya dipakai jika interval bulan diisi.</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
@@ -616,7 +674,7 @@ function detailSheet(id){
   openSheet(`
     <div class="dt-head"><h3 style="margin:0">${r.pinned?'<span class="pinmark">📌</span> ':""}${esc(r.name)}</h3>
       <span class="badge" style="color:${col};background:rgba(255,255,255,.06)">${st.label}</span></div>
-    <span class="meta" style="font-family:var(--mono);font-size:11.5px;color:var(--faint)">Interval: ${rules.join(" / ")||"—"}${r.category?" · "+esc(r.category)+" (T"+tierOf(r)+")":" · prioritas T"+tierOf(r)}</span>
+    <span class="meta" style="font-family:var(--mono);font-size:11.5px;color:var(--faint)">Interval: ${rules.join(" / ")||"—"}${r.category?" · "+esc(r.category)+" (Tier "+tierOf(r,v)+")":" · prioritas Tier "+tierOf(r,v)}</span>
     <div class="dt-grid">
       <div class="dt-cell"><div class="k">Terakhir diganti · KM</div><div class="v">${nf(r.baseOdo)} km</div></div>
       <div class="dt-cell"><div class="k">Terakhir diganti · Tgl</div><div class="v">${fmtD(r.baseDate)}</div></div>
