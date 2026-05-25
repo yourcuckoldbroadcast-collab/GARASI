@@ -285,9 +285,33 @@ const DICT_DEFAULT=[
   {name:"Filter Bensin / Fuel Pump",tier:"B",kw:["filter bensin","fuel pump"]},
   {name:"Lainnya / Misc",tier:"Null",kw:[]}
 ];
+function mkDict(g){const o=[];["S","A","B","Null"].forEach(t=>(g[t]||[]).forEach(it=>{
+  if(Array.isArray(it))o.push({name:it[0],tier:t,kw:it.slice(1)});else o.push({name:it,tier:t,kw:[]});}));return o;}
+const DICT_MOBIL_MANUAL=mkDict({
+  S:[["Oli mesin","oli mesin"],["Filter oli","filter oli"],["Coolant check/top-up","coolant"],["Oli rem check","oli rem"],["Tekanan ban","tekanan ban"],["Kampas rem inspection","kampas rem inspection"],["Air wiper","air wiper","washer"],["Aki & charging check","aki","accu"],"Cek kebocoran oli/coolant/rem",["Rotasi ban","rotasi ban"],["Spooring/balancing","spooring","balancing"]],
+  A:[["Filter udara","filter udara"],["Filter kabin/AC","filter kabin","filter ac"],["Busi","busi"],["Filter bensin","filter bensin"],["Oli transmisi manual / gear oil","oli transmisi","gear oil"],["Minyak rem replacement","minyak rem"],["Flush coolant","flush coolant"],["Timing belt","timing belt"],"Timing belt tensioner","Timing belt idler pulley",["Belt aksesori / fan belt","fan belt","belt aksesori"],["Kopling set / clutch disc","kopling","clutch"],"Release bearing kopling",["Master kopling atas/bawah","master kopling"],["Throttle body cleaning","throttle body"],["Injector cleaning ringan","injector cleaning"],["Tune up","tune up"],["Wiper blade","wiper blade","wiper"],["Power steering fluid","power steering"]],
+  B:[["Timing chain inspection","timing chain"],"Timing chain tensioner",["Cam phaser / VVT actuator","vvt","cam phaser"],"Injector service mendalam",["Fuel pump","fuel pump"],"Fuel pressure regulator",["Ignition coil","ignition coil","koil"],["Kabel busi (mobil lama)","kabel busi"],["Alternator","alternator"],["Dinamo starter","dinamo starter"],["O2 sensor / lambda sensor","o2 sensor","lambda"],["MAF / MAP sensor","maf","map sensor"],["PCV valve","pcv"],["EGR valve","egr"],["Catalytic converter","catalytic"],["Shock absorber","shock absorber"],["Tie rod","tie rod"],["Ball joint","ball joint"],["Bushing suspensi","bushing"],["Link stabilizer","link stabilizer","stabilizer"],["Steering rack","steering rack"],["Bearing roda","bearing roda"],["CV joint / drive shaft","cv joint","drive shaft"],["Engine mounting","engine mounting"],["Water pump","water pump"],["Thermostat","thermostat"],["Radiator cap","radiator cap"],["Selang radiator","selang radiator"],["Vacuum hose","vacuum hose"],["AC compressor","ac compressor","kompresor ac"],["Kondensor AC","kondensor"],["Evaporator cleaning","evaporator"],["Knalpot & gasket exhaust","knalpot"],["Differential oil (RWD/4WD)","differential","gardan"]],
+  Null:[["Scan ECU","scan ecu"],["Reset service reminder","reset service"],"Cuci ruang mesin","Pelumasan engsel","Setel lampu","Pembersihan terminal aki","Cek ban serep & toolkit",["Detailing interior","detailing"],"Underbody cleaning","Rust inspection",["Fogging kabin","fogging"],["Cek relay & fuse","relay","fuse"]]
+});
+const DICT_MOBIL_MATIC=mkDict({
+  S:[["Oli mesin","oli mesin"],["Filter oli","filter oli"],["Coolant check/top-up","coolant"],["Oli rem check","oli rem"],["Tekanan ban","tekanan ban"],["Kampas rem inspection","kampas rem inspection"],["Air wiper","air wiper","washer"],["Aki & charging check","aki","accu"],"Cek kebocoran fluida",["Monitoring suhu transmisi/CVT","suhu transmisi","suhu cvt"]],
+  A:[["Filter udara","filter udara"],["Filter kabin","filter kabin","filter ac"],["Busi","busi"],["Filter bensin","filter bensin"],["ATF / CVT fluid","atf","cvt fluid","oli matic","oli transmisi"],["Filter transmisi / strainer","filter transmisi","strainer"],["Minyak rem replacement","minyak rem"],["Flush coolant","flush coolant"],["Timing belt","timing belt"],"Timing belt tensioner","Timing belt idler pulley",["Belt aksesori","belt aksesori","fan belt"],["Throttle body cleaning","throttle body"],["Injector cleaning ringan","injector cleaning"],["Valve body cleaning ringan","valve body cleaning"],["Wiper blade","wiper blade","wiper"],["Power steering fluid","power steering"],["CVT belt replacement","cvt belt"],["Pulley inspection (CVT)","pulley"],["Transmission pan cleaning","transmission pan"]],
+  B:[["Timing chain inspection","timing chain"],"Timing chain tensioner",["Solenoid transmisi","solenoid"],"Valve body overhaul",["Torque converter inspection","torque converter"],"Transmission cooler","Pulley bearing CVT",["Fuel pump","fuel pump"],["Ignition coil","ignition coil","koil"],["Alternator","alternator"],["Starter motor","starter motor"],["O2 sensor","o2 sensor","lambda"],["MAF/MAP sensor","maf","map sensor"],["EGR valve","egr"],["Catalytic converter","catalytic"],["Shock absorber","shock absorber"],["Tie rod","tie rod"],["Ball joint","ball joint"],["Bushing","bushing"],["Bearing roda","bearing roda"],["Steering rack","steering rack"],["Engine mounting","engine mounting"],["Water pump","water pump"],["Thermostat","thermostat"],["Radiator cap","radiator cap"],["Selang radiator","selang radiator"],["Vacuum hose","vacuum hose"],["AC compressor","ac compressor","kompresor ac"],["Kondensor","kondensor"],["Evaporator","evaporator"],["Differential oil (RWD/4WD)","differential","gardan"]],
+  Null:[["Scan ECU/TCM","scan ecu","tcm"],["Reset adaptive transmission learning","reset adaptive"],["Reset service reminder","reset service"],"Cuci ruang mesin","Pelumasan engsel",["Rotasi ban","rotasi ban"],["Spooring/balancing","spooring","balancing"],["Detailing interior","detailing"],["Fogging kabin","fogging"],"Pembersihan terminal aki",["Cek relay & fuse","relay","fuse"]]
+});
+const DICT_MOTOR_MANUAL=mkDict({
+  S:[["Oli mesin","oli mesin"],["Filter oli / saringan oli","filter oli","saringan oli"],["Rantai roda check","rantai roda","rantai"],["Setelan rantai roda","setelan rantai"],["Tekanan ban","tekanan ban"],["Kampas rem inspection","kampas rem inspection"],["Rem depan/belakang","rem depan","rem belakang"],["Aki & charging check","aki","accu"],["Setelan kopling/free play","setelan kopling","free play"],["Air radiator check","air radiator","coolant"],"Cek kebocoran oli/coolant"],
+  A:[["Filter udara","filter udara"],["Busi","busi"],["Setel klep / valve clearance","setel klep","klep","valve clearance"],["Oli gardan/transmisi","oli gardan","gardan","oli transmisi"],["Minyak rem replacement","minyak rem"],["Flush coolant","flush coolant"],["Kampas rem","kampas rem","kampas"],["Kampas kopling","kampas kopling"],["Kabel kopling","kabel kopling"],["Kabel gas","kabel gas"],["Gir depan/belakang","gir depan","gir belakang"],["Set rantai & sprocket","sprocket","set rantai"],["Throttle body cleaning","throttle body"],["Karburator cleaning","karburator","karbu"],["Injector cleaning ringan","injector cleaning"],["Seal shock depan","seal shock"],["Oli shock depan","oli shock"],["Tune up","tune up"]],
+  B:[["Rantai keteng / cam chain","rantai keteng","keteng","cam chain"],["Tensioner keteng","tensioner keteng"],["Rumah kopling / clutch housing","rumah kopling","clutch housing"],["Fuel pump (FI)","fuel pump"],"Injector service mendalam",["Ignition coil","ignition coil","koil"],["CDI / ECU","cdi"],["Kiprok / regulator rectifier","kiprok","regulator rectifier","rectifier"],["Spul / stator","spul","stator"],["Bearing roda","bearing roda"],["Bearing komstir","komstir"],["Shockbreaker depan/belakang","shockbreaker","shock breaker"],["Linkage suspensi","linkage"],["Kaliper rem service","kaliper"],["Master rem","master rem"],["Selang rem","selang rem"],["Disc brake / piringan","disc brake","piringan","cakram"],["Water pump","water pump"],["Thermostat","thermostat"],["Radiator cap","radiator cap"],["Kipas radiator","kipas radiator"],["Sensor FI","sensor fi"],["Knalpot & gasket","knalpot"],["Engine hanger bushing","engine hanger","hanger bushing"]],
+  Null:[["Scan ECU FI","scan ecu"],"Setel lampu","Lumasi kabel-kabel","Bersihkan terminal aki",["Cuci motor/detailing","detailing","cuci motor"],"Semir body/plastik","Cek baut body","Pelumasan standar samping/tengah","Cek bracket & aksesori",["Cek fuse & relay","fuse","relay"],"Reset ECU ringan bila perlu"]
+});
 function dictFor(v){
   const key=((v&&v.vtype)||"")+"-"+((v&&v.trans)||"");
-  return key==="motor-matic"?DICT_MATIC_MOTOR:DICT_DEFAULT;
+  if(key==="motor-matic")return DICT_MATIC_MOTOR;
+  if(key==="mobil-manual")return DICT_MOBIL_MANUAL;
+  if(key==="mobil-matic")return DICT_MOBIL_MATIC;
+  if(key==="motor-manual")return DICT_MOTOR_MANUAL;
+  return DICT_DEFAULT;
 }
 function tierOf(r,v){
   const cats=dictFor(v);
@@ -522,8 +546,14 @@ $("#cfN").onclick=()=>{cfHide();const f=cfNo;cfYes=null;cfNo=null;if(f)f();};
 $("#cfY").onclick=()=>{cfHide();const f=cfYes;cfYes=null;cfNo=null;if(f)f();};
 $("#cf").addEventListener("click",e=>{if(e.target.id==="cf"){cfHide();cfYes=null;cfNo=null;}});
 
-const catOptions=(sel,v)=>`<option value="">— pilih / kosongkan —</option>`+
-  dictFor(v).map(c=>`<option value="${esc(c.name)}" ${sel===c.name?"selected":""}>${esc(c.name)} · ${c.tier}</option>`).join("");
+const catOptions=(sel,v)=>{
+  const d=dictFor(v);let h=`<option value="">— pilih / kosongkan —</option>`;
+  ["S","A","B","Null"].forEach(t=>{
+    const items=d.filter(c=>c.tier===t);if(!items.length)return;
+    h+=`<optgroup label="Tier ${t}">`+items.map(c=>`<option value="${esc(c.name)}" ${sel===c.name?"selected":""}>${esc(c.name)}</option>`).join("")+`</optgroup>`;
+  });
+  return h;
+};
 
 /* ---------- vehicle / odometer ---------- */
 function vehicleModal(editId){
