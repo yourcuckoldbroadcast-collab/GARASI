@@ -800,9 +800,28 @@ function renderProfilDetail(){
 
   h+=`<div class="sect"><h2>Jarak Tempuh</h2></div>
     <div class="mgrid">
-      ${M("Rata-rata / Bulan", d?nf(Math.round(d.perMonth))+'<small>KM</small>':"—")}
-      ${M("Rata-rata / Hari", d?nf(Math.round(d.perDay))+'<small>KM</small>':"—")}
+      ${M("Pemakaian / Bulan", d?nf(Math.round(d.perMonth))+'<small>KM</small>':"—")}
+      ${M("Pemakaian / Hari", d?nf(Math.round(d.perDay))+'<small>KM</small>':"—")}
     </div>`;
+  if(d){
+    const basis=`dihitung dari ${d.segCount+1} catatan · ${d.days} hari`;
+    const note=d.thin?" · data masih sedikit, angka bisa berubah"
+      :(d.trips.length?` · pola harian, di luar ${d.trips.length} perjalanan jauh`:"");
+    h+=`<div class="mu" style="margin:-2px 2px 8px;font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.02em">${basis}${note}</div>`;
+    if(d.trips.length){
+      h+=`<div class="sect" style="margin-top:8px"><h2>Perjalanan Jauh Terdeteksi</h2></div>`;
+      d.trips.slice().reverse().forEach(t=>{
+        const tf=tripFuel(v,t);
+        const bits=[`${nf(t.km)} km / ${t.days} hari`];
+        if(tf.cost>0)bits.push(`Rp ${nf(tf.cost)} bensin`);
+        if(tf.kmPerL!=null)bits.push(`${tf.kmPerL.toFixed(1)} km/L`);
+        h+=`<div class="led" style="cursor:default">
+          <div class="lh"><span class="ln">${fmtD(t.from.date)} – ${fmtD(t.to.date)}</span><span class="lo">±${nf(Math.round(t.rate))} km/hari</span></div>
+          <div class="lv">${bits.join(" · ")}</div></div>`;
+      });
+      h+=`<div class="mu" style="margin:2px 2px 4px;font-family:var(--mono);font-size:10.5px;color:var(--faint)">termasuk perjalanan: ±${nf(Math.round(d.perMonthAll))} km/bln</div>`;
+    }
+  }
 
   h+=`<div class="sect" style="margin-top:16px"><h2>Bensin</h2></div>
     <div class="mgrid">
@@ -840,15 +859,49 @@ function vehiclePoints(v){
   v.reminders.forEach(r=>r.logs.forEach(l=>{if(l.odo>0)m[l.date]=Math.max(m[l.date]||0,l.odo);}));
   (v.odoLog||[]).forEach(p=>{if(p.odo>0)m[p.date]=Math.max(m[p.date]||0,p.odo);});
   (v.fuelLog||[]).forEach(p=>{if(p.odo>0)m[p.date]=Math.max(m[p.date]||0,p.odo);});
-  if(v.odo>0)m[todayStr()]=Math.max(m[todayStr()]||0,v.odo);
+  // catatan: TIDAK menyuntik odo "hari ini" — laju & jarak hanya dari titik yang benar-benar dicatat,
+  // supaya hari yang belum dicatat tidak dianggap sebagai hari parkir (bias palsu).
   return Object.keys(m).sort().map(d=>({date:d,odo:m[d]}));
+}
+/* ambang deteksi perjalanan jauh — tunable, dikalibrasi dari data tester */
+const TRIP_RATE_MULT=2.5;   // segmen dianggap "trip" bila lajunya > 2.5× median
+const TRIP_KM_FLOOR=200;    // dan jaraknya minimal 200 km dalam satu segmen
+const MIN_SEGMENTS=3;       // butuh ≥3 segmen sebelum deteksi outlier bermakna
+function median(arr){if(!arr.length)return null;const a=[...arr].sort((x,y)=>x-y);const m=Math.floor(a.length/2);return a.length%2?a[m]:(a[m-1]+a[m])/2;}
+function vehicleSegments(v){
+  const p=vehiclePoints(v);const segs=[];
+  for(let i=0;i<p.length-1;i++){
+    const km=p[i+1].odo-p[i].odo,days=Math.max(1,diffDays(p[i].date,p[i+1].date));
+    if(km<0)continue;
+    segs.push({from:p[i],to:p[i+1],km,days,rate:km/days});
+  }
+  return segs;
+}
+function tripFuel(v,trip){
+  const f=(v.fuelLog||[]).filter(x=>x.date>trip.from.date&&x.date<=trip.to.date);
+  const cost=f.reduce((a,x)=>a+(x.cost||0),0);
+  const liters=f.reduce((a,x)=>a+(x.liters||0),0);
+  return {cost,liters,kmPerL:liters>0?trip.km/liters:null};
 }
 function vehicleDist(v){
   const p=vehiclePoints(v);if(p.length<2)return null;
   const first=p[0],last=p[p.length-1];
   const km=Math.max(0,last.odo-first.odo),days=diffDays(first.date,last.date);
   if(days<=0||km<=0)return null;
-  const perDay=km/days;return {km,days,perDay,perMonth:perDay*30.4};
+  const perDayAll=km/days;                                   // gabungan (termasuk trip)
+  const segs=vehicleSegments(v);
+  let perDay=perDayAll,trips=[],thin=segs.length<MIN_SEGMENTS;
+  if(!thin){
+    const med=median(segs.map(s=>s.rate));
+    if(med>0){
+      const isTrip=s=>s.rate>med*TRIP_RATE_MULT&&s.km>=TRIP_KM_FLOOR;
+      trips=segs.filter(isTrip).map(s=>({from:s.from,to:s.to,km:s.km,days:s.days,rate:s.rate}));
+      const normal=segs.filter(s=>!isTrip(s));
+      const nKm=normal.reduce((a,s)=>a+s.km,0),nDays=normal.reduce((a,s)=>a+s.days,0);
+      if(nDays>0&&normal.length)perDay=nKm/nDays;             // baseline rutin (trip dikeluarkan)
+    }
+  }
+  return {km,days,perDay,perMonth:perDay*30.4,perDayAll,perMonthAll:perDayAll*30.4,trips,thin,segCount:segs.length};
 }
 function garageStats(){
   let cost=0,services=0,km=0,perMonth=0,perDay=0,hasDist=false;
@@ -869,7 +922,8 @@ function vehicleFuel(v){
   const totalCost=f.reduce((s,x)=>s+(x.cost||0),0);
   const totalLiters=f.reduce((s,x)=>s+(x.liters||0),0);
   const spanDays=Math.max(0,diffDays(f[0].date,f[f.length-1].date));
-  const everyDays=(f.length>1&&spanDays>0)?spanDays/(f.length-1):null;
+  let everyDays=null;
+  if(f.length>1){const ints=[];for(let i=1;i<f.length;i++){const dd=diffDays(f[i-1].date,f[i].date);if(dd>0)ints.push(dd);}everyDays=median(ints);}
   const avgPerFill=totalCost>0?totalCost/f.length:null;
   const avgLiters=totalLiters>0?totalLiters/f.length:null;
   const wo=f.filter(x=>x.odo>0);
@@ -1310,7 +1364,7 @@ function aboutModal(){
   openSheet(`<h3>ℹ️ Tentang Garasi Log</h3>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:-4px 0 14px">Aplikasi offline. Semua data disimpan <b style="color:var(--text)">di perangkat ini saja</b> — tidak ada server, tidak dikirim ke mana pun.</p>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 16px">⚠️ Data bisa hilang jika kamu menghapus data situs. Biasakan <b style="color:var(--amber)">Export backup</b> rutin lalu simpan file .json-nya di Google Drive.</p>
-    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 4 · papan kerja + catat cepat bensin/odometer per kendaraan, profil per kendaraan, telemetri jarak & bensin (tank-to-tank). Tetap kompatibel impor backup lama.</p>
+    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 4 · papan kerja + catat cepat bensin/odometer per kendaraan, profil per kendaraan, telemetri jarak & bensin (tank-to-tank) dengan baseline harian robust + deteksi perjalanan jauh otomatis. Tetap kompatibel impor backup lama.</p>
     <div class="row"><button class="btn primary" id="c">Mengerti</button></div>`);
   $("#c").onclick=closeSheet;
 }
