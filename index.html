@@ -358,6 +358,16 @@
   .ctot .ct .k{display:block;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;margin-bottom:3px}
   .ctot .ct b{font-family:var(--mono);font-size:13px;font-weight:700}
   .ctot .ct.sv b{color:var(--chart-svc)} .ctot .ct.fu b{color:var(--amber)} .ctot .ct.to b{color:var(--text)}
+
+  /* arsip bensin (list record) */
+  .frec{border:1px solid var(--line);border-radius:12px;background:var(--panel);padding:11px 12px;margin-bottom:9px}
+  .frec .fh{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+  .frec .fd{font-family:var(--mono);font-size:12.5px;color:var(--text);font-weight:600}
+  .frec .fc{font-family:var(--mono);font-size:13px;color:var(--amber);font-weight:700;white-space:nowrap}
+  .frec .fm{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:5px;letter-spacing:.02em}
+  .frec .ftags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+  .frec .ftag{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;color:var(--amber-dim);background:rgba(255,196,84,.08);border:1px solid var(--line2);padding:2px 8px;border-radius:6px}
+  .frec .facts{display:flex;gap:8px;margin-top:10px}
 </style>
 </head>
 <body>
@@ -524,7 +534,9 @@ function migrate(s){
       .filter(p=>p&&/^\d{4}-\d{2}-\d{2}$/.test(p.date))
       .map(p=>({id:p.id||uid(),date:p.date,odo:clean(p.odo),
         liters:(typeof p.liters==="number"&&p.liters>0)?p.liters:(parseFloat(p.liters)>0?parseFloat(p.liters):0),
-        cost:clean(p.cost)}))
+        cost:clean(p.cost),
+        fuel:typeof p.fuel==="string"?p.fuel:"",
+        place:typeof p.place==="string"?p.place:""}))
       .filter(p=>p.cost>0||p.liters>0||p.odo>0);
   });
   if(!s.selected||!s.vehicles.some(v=>v.id===s.selected))
@@ -894,7 +906,11 @@ function renderProfilDetail(){
       ${M("Perkiraan Biaya / Hari", f.perDayCost!=null?"Rp "+nf(Math.round(f.perDayCost)):"—",20)}
       ${M("Konsumsi", f.kmPerL!=null?f.kmPerL.toFixed(1)+'<small>KM/L</small>':"—")}
       ${M("Total Biaya Bensin", f.totalCost>0?"Rp "+nf(f.totalCost):"—",18)}
-      ${M("Jumlah Isi", f.count?f.count+'<small>×</small>':"—")}
+      <div class="mcard" id="pfcount" style="cursor:pointer">
+        <div class="mk">Jumlah Isi ›</div>
+        <div class="mv">${f.count?f.count+'<small>×</small>':"0<small>×</small>"}</div>
+        <div class="mu" style="margin-top:6px">${f.count?"ketuk: lihat & edit arsip":"ketuk: catat bensin"}</div>
+      </div>
       ${M("Rata-rata / Isi", f.avgPerFill!=null&&f.count?"Rp "+nf(Math.round(f.avgPerFill)):"—",18)}
     </div>
     ${f.everyDays!=null?`<div class="mcard wide" style="margin-bottom:8px"><div class="mk">Frekuensi Isi Bensin</div><div class="mv" style="font-size:18px">tiap ±${Math.round(f.everyDays)}<small>HARI</small></div>${f.avgLiters!=null?`<div class="mu">rata-rata ${f.avgLiters.toFixed(1)} liter per pengisian</div>`:""}</div>`:""}`;
@@ -916,7 +932,8 @@ function renderProfilDetail(){
   app.innerHTML=h;
   if(many)app.querySelector("#pback").onclick=backProfil;
   app.querySelector("#pchk").onclick=()=>odoCheckinModal(v.id);
-  app.querySelector("#pfuel").onclick=()=>fuelModal(v.id);
+  app.querySelector("#pfuel").onclick=()=>fuelModal(v.id,{full:true});
+  const pfc=app.querySelector("#pfcount");if(pfc)pfc.onclick=()=>fuelArchiveModal(v.id);
   app.querySelector("#pgo").onclick=()=>openVehicle(v.id);
   if(hasChart)mountChart(v);
 }
@@ -1206,34 +1223,91 @@ function odoCheckinModal(vid){
 }
 
 /* ---------- catat isi bensin ---------- */
-function fuelModal(vid){
+const FUEL_TYPES=["Pertalite","Pertamax","Pertamax Turbo","Solar/Dexlite","Isi Sendiri","Lainnya"];
+const FUEL_PLACES=["SPBU","Pom Mini","Isi Sendiri","Lainnya"];
+function fOpt(arr,sel){let a=arr.slice();if(sel&&!a.includes(sel))a=[sel,...a];return `<option value="">—</option>`+a.map(o=>`<option value="${esc(o)}" ${sel===o?"selected":""}>${esc(o)}</option>`).join("");}
+function fuelModal(vid,opts){
+  opts=opts||{};
   state.selected=vid;const v=vehicle();if(!v)return;
-  openSheet(`<h3>⛽ Catat Isi Bensin · ${esc(v.name)}</h3>
+  const rec=opts.editId?(v.fuelLog||[]).find(x=>x.id===opts.editId):null;
+  const isEdit=!!rec, full=!!opts.full, onDone=opts.onDone;
+  const dDate=isEdit?rec.date:todayStr(), dOdo=isEdit?rec.odo:v.odo;
+  const dL=isEdit&&rec.liters?rec.liters:"", dC=isEdit&&rec.cost?rec.cost:"";
+  const dFuel=isEdit?(rec.fuel||""):"", dPlace=isEdit?(rec.place||""):"";
+  const detail=full?`<div class="two">
+      <div class="field"><label>Jenis bensin</label><select id="ffuel">${fOpt(FUEL_TYPES,dFuel)}</select></div>
+      <div class="field"><label>Lokasi</label><select id="fplace">${fOpt(FUEL_PLACES,dPlace)}</select></div>
+    </div>`:"";
+  openSheet(`<h3>⛽ ${isEdit?"Edit Catatan Bensin":"Catat Isi Bensin"} · ${esc(v.name)}</h3>
     <div class="two">
-      <div class="field"><label>Tanggal</label><input id="fd" type="date" value="${todayStr()}"></div>
-      <div class="field"><label>Odometer (km)</label><input id="fo" inputmode="numeric" value="${v.odo}"></div>
+      <div class="field"><label>Tanggal</label><input id="fd" type="date" value="${dDate}"></div>
+      <div class="field"><label>Odometer (km)</label><input id="fo" inputmode="numeric" value="${dOdo}"></div>
     </div>
     <div class="two">
-      <div class="field"><label>Liter (opsional)</label><input id="fl" inputmode="decimal" placeholder="cth: 4.2"></div>
-      <div class="field"><label>Biaya (Rp)</label><input id="fc" inputmode="numeric" placeholder="cth: 50000"></div>
+      <div class="field"><label>Liter (opsional)</label><input id="fl" inputmode="decimal" placeholder="cth: 4.2" value="${dL}"></div>
+      <div class="field"><label>Biaya (Rp)</label><input id="fc" inputmode="numeric" placeholder="cth: 50000" value="${dC}"></div>
     </div>
-    <div class="hint" style="margin:-6px 0 14px">Odometer di sini ikut menghitung rata-rata jarak & biaya per km. Isi liter bila ingin tahu konsumsi km/liter.</div>
-    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
-  const fo=$("#fo");fo.focus();fo.select();$("#c").onclick=closeSheet;
+    ${detail}
+    <div class="hint" style="margin:-6px 0 14px">Odometer ikut menghitung rata-rata jarak & biaya per km. Isi liter bila ingin tahu konsumsi km/liter.</div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
+  const fo=$("#fo");if(!isEdit){fo.focus();fo.select();}
+  $("#c").onclick=()=>{closeSheet();if(onDone)onDone();};
   $("#ok").onclick=()=>{
     const fd=$("#fd").value||todayStr();const fov=clean(fo.value);
     const fl=Math.max(0,parseFloat(String($("#fl").value).replace(",","."))||0);const fc=clean($("#fc").value);
     if(diffDays(todayStr(),fd)>0){toast("Tanggal tidak boleh di masa depan");return;}
     if(fc<=0&&fl<=0){toast("Isi minimal biaya atau liter");return;}
-    const commit=()=>{
+    const apply=()=>{
       if(!Array.isArray(v.fuelLog))v.fuelLog=[];
-      v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc});
+      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=$("#ffuel").value;rec.place=$("#fplace").value;}}
+      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?$("#ffuel").value:"",place:full?$("#fplace").value:""});}
       if(fov>v.odo)v.odo=fov;
-      save();render();closeSheet();toast("Isi bensin dicatat ⛽");
+      save();render();closeSheet();toast(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽");
+      if(onDone)onDone();
     };
-    if(fov>0&&fov<v.odo){confirmBox("Odometer lebih kecil?",`Odometer (${nf(fov)}) di bawah yang tersimpan (${nf(v.odo)}). Tetap simpan?`,commit);return;}
-    commit();
+    if(isEdit){
+      // record historis wajar ber-odometer < odometer kini → tak perlu guard "lebih kecil",
+      // cukup satu konfirmasi simpan sebagai fallback kedua.
+      confirmBox("Simpan perubahan?","Catatan bensin ini akan diperbarui.",apply,"Ya, simpan");
+    }else{
+      if(fov>0&&fov<v.odo){confirmBox("Odometer lebih kecil?",`Odometer (${nf(fov)}) di bawah yang tersimpan (${nf(v.odo)}). Tetap simpan?`,apply);return;}
+      apply();
+    }
   };
+}
+function deleteFuel(vid,id,onDone){
+  const v=state.vehicles.find(x=>x.id===vid);if(!v)return;
+  confirmBox("Hapus catatan bensin?","Catatan pengisian ini akan dihapus permanen.",()=>{
+    v.fuelLog=(v.fuelLog||[]).filter(x=>x.id!==id);save();render();toast("Catatan dihapus");if(onDone)onDone();
+  },"Ya, hapus");
+}
+function fuelArchiveModal(vid){
+  state.selected=vid;const v=vehicle();if(!v)return;
+  const recs=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?1:a.date>b.date?-1:0);
+  let body;
+  if(!recs.length)body=`<div class="emptylog" style="margin-bottom:4px">Belum ada catatan bensin. Tekan tombol di atas untuk menambah.</div>`;
+  else body=recs.map(r=>{
+    const tags=[];
+    if(r.fuel)tags.push(`<span class="ftag">${esc(r.fuel)}</span>`);
+    if(r.place)tags.push(`<span class="ftag">${esc(r.place)}</span>`);
+    if(r.liters>0)tags.push(`<span class="ftag">${r.liters} L</span>`);
+    return `<div class="frec">
+      <div class="fh"><span class="fd">${fmtDLong(r.date)}</span><span class="fc">${r.cost>0?"Rp "+nf(r.cost):"—"}</span></div>
+      ${r.odo>0?`<div class="fm">${nf(r.odo)} km${r.liters>0&&r.cost>0?` · Rp ${nf(Math.round(r.cost/r.liters))}/L`:""}</div>`:""}
+      ${tags.length?`<div class="ftags">${tags.join("")}</div>`:""}
+      <div class="facts"><button class="mini" data-fe="${r.id}">✏️ Edit</button><button class="mini del" data-fx="${r.id}" style="color:var(--red);border-color:rgba(255,93,82,.25)">Hapus</button></div>
+    </div>`;
+  }).join("");
+  openSheet(`<h3>⛽ Arsip Bensin · ${esc(v.name)}</h3>
+    <button class="addrem" id="fadd" style="margin-bottom:14px">＋ Catat Bensin</button>
+    ${body}
+    <div class="row" style="margin-top:14px"><button class="btn ghost" id="c">Tutup</button></div>`);
+  $("#c").onclick=closeSheet;
+  $("#fadd").onclick=()=>fuelModal(vid,{full:true,onDone:()=>fuelArchiveModal(vid)});
+  recs.forEach(r=>{
+    $("#sheet").querySelector(`[data-fe="${r.id}"]`).onclick=()=>fuelModal(vid,{full:true,editId:r.id,onDone:()=>fuelArchiveModal(vid)});
+    $("#sheet").querySelector(`[data-fx="${r.id}"]`).onclick=()=>deleteFuel(vid,r.id,()=>fuelArchiveModal(vid));
+  });
 }
 
 function remCard(r,v){
@@ -1550,7 +1624,7 @@ $("#menuBtn").onclick=()=>{
   $("#about").onclick=()=>{closeSheet();aboutModal();};
 };
 function doExport(){
-  const data=JSON.stringify({app:"garasi-log",version:4,exportedAt:new Date().toISOString(),state},null,2);
+  const data=JSON.stringify({app:"garasi-log",version:5,exportedAt:new Date().toISOString(),state},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
   const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
