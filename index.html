@@ -321,11 +321,15 @@
 
   /* diagram batang bulanan (telemetri pit-stop) */
   .mchart{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#1d1810,#181410);padding:13px 12px 10px;overflow:hidden}
-  .mchart .crow{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:10px}
-  .mchart .rdt .rk{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--faint);text-transform:uppercase}
-  .mchart .rdt .rm{font-family:var(--mono);font-size:13px;color:var(--text);margin-top:3px;font-weight:600}
-  .mchart .rdt .rv{font-family:var(--mono);font-size:11px;margin-top:4px;letter-spacing:.02em}
-  .mchart .rdt .rv .sv{color:var(--chart-svc)} .mchart .rdt .rv .fu{color:var(--amber)}
+  .mchart .crow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px}
+  .mchart .rk{font-family:var(--mono);font-size:10px;letter-spacing:.14em;color:var(--faint);text-transform:uppercase}
+  .mchart .rdt{margin-bottom:10px}
+  .mchart .rdt .rm{font-family:var(--mono);font-size:14px;color:var(--text);font-weight:700}
+  .mchart .rv{display:flex;flex-direction:column;gap:2px;margin-top:6px}
+  .mchart .rv .rvrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.02em;white-space:nowrap}
+  .mchart .rv .rvrow .lbl{display:inline-block;width:54px;color:var(--faint);font-size:10px}
+  .mchart .rv .rvrow b{font-weight:700}
+  .mchart .rv .rvrow.sv b{color:var(--chart-svc)} .mchart .rv .rvrow.fu b{color:var(--amber)}
   .mchart .legend{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
   .mchart .lg{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9.5px;letter-spacing:.08em;color:var(--faint);text-transform:uppercase}
   .mchart .lg i{width:9px;height:9px;border-radius:2px;display:inline-block}
@@ -1046,23 +1050,19 @@ function monthlyChartInner(v,scope){
       <div class="ml">${MON_SHORT[d.month]}</div><div class="yl">${showYear?d.year:""}</div></div>`;
   }).join("");
   const s=data[selIdx]||{month:1,year:"",svc:0,fuel:0};
-  const showTabs=multi||rng||monthlySpend(v).length>=3;
-  let tabs="";
-  if(showTabs){
-    let t="";
-    if(multi)t+=years.map(y=>`<button data-yr="${y}" class="${(!rng&&scope===y)?"on":""}">${y}</button>`).join("");
-    t+=`<button data-yr="all" class="${scope==="all"?"on":""}">Semua</button>`;
-    t+=`<button data-yr="range" class="${rng?"on":""}">${rng?rangeLabel(scope):"⇄ Rentang"}</button>`;
-    tabs=`<div class="ytabs">${t}</div>`;
-  }
+  let t="";
+  if(multi)t+=years.map(y=>`<button data-yr="${y}" class="${(!rng&&scope===y)?"on":""}">${y}</button>`).join("");
+  t+=`<button data-yr="all" class="${scope==="all"?"on":""}">Semua</button>`;
+  t+=`<button data-yr="range" class="${rng?"on":""}">${rng?rangeLabel(scope):"⇄ Rentang"}</button>`;
+  const tabs=`<div class="ytabs">${t}</div>`;
   const sl=rng?rangeLabel(scope):(scope==="all"?"Semua":scope);
   return `<div class="mchart">
     <div class="crow">
-      <div class="rdt"><div class="rk">Biaya Bulanan</div>
-        <div class="rm" id="mrm">${MON_SHORT[s.month]} ${s.year}</div>
-        <div class="rv" id="mrv"><span class="sv">Servis Rp ${nf(s.svc)}</span> · <span class="fu">Bensin Rp ${nf(s.fuel)}</span></div></div>
+      <div class="rk">Biaya Bulanan</div>
       <div class="legend"><span class="lg"><i class="svc"></i>Servis</span><span class="lg"><i class="fuel"></i>Bensin</span></div>
     </div>
+    <div class="rdt"><div class="rm" id="mrm">${MON_SHORT[s.month]} ${s.year}</div>
+      <div class="rv" id="mrv">${rvHTML(s.svc,s.fuel)}</div></div>
     ${tabs}
     <div class="mscroll"><div class="plot${fit?" fit":""}">${bars}</div></div>
     <div class="ctot">
@@ -1071,6 +1071,10 @@ function monthlyChartInner(v,scope){
       <div class="ct to"><span class="k">Total ${sl}</span><b>Rp ${nf(tSvc+tFuel)}</b></div>
     </div>
   </div>`;
+}
+function rvHTML(svc,fuel){
+  return `<div class="rvrow sv"><span class="lbl">Servis</span><b>Rp ${nf(svc)}</b></div>`+
+         `<div class="rvrow fu"><span class="lbl">Bensin</span><b>Rp ${nf(fuel)}</b></div>`;
 }
 function rangePickerModal(v,scope,onApply){
   const curY=+monthKey(todayStr()).slice(0,4);
@@ -1106,7 +1110,7 @@ function mountChart(v){
       wrap.querySelectorAll(".mgrp").forEach(x=>x.classList.remove("sel"));g.classList.add("sel");
       const rm=wrap.querySelector("#mrm"),rv=wrap.querySelector("#mrv");
       if(rm)rm.textContent=g.dataset.label;
-      if(rv)rv.innerHTML=`<span class="sv">Servis Rp ${nf(+g.dataset.svc)}</span> · <span class="fu">Bensin Rp ${nf(+g.dataset.fuel)}</span>`;
+      if(rv)rv.innerHTML=rvHTML(+g.dataset.svc,+g.dataset.fuel);
     });
     wrap.querySelectorAll(".ytabs button").forEach(b=>b.onclick=()=>{
       const yr=b.dataset.yr;
