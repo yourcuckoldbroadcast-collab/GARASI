@@ -368,6 +368,25 @@
   .frec .ftags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
   .frec .ftag{font-family:var(--mono);font-size:9.5px;letter-spacing:.05em;color:var(--amber-dim);background:rgba(255,196,84,.08);border:1px solid var(--line2);padding:2px 8px;border-radius:6px}
   .frec .facts{display:flex;gap:8px;margin-top:10px}
+
+  /* Skor Operasional (donat hibrida) */
+  .hcard{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+  .hdon{flex:0 0 auto}
+  .donut{width:118px;height:118px;display:block;animation:donIn .45s ease}
+  @keyframes donIn{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:scale(1)}}
+  .donut circle{transition:stroke-dasharray .5s ease}
+  .donut .dval{font-family:var(--mono);font-size:25px;font-weight:700;fill:var(--text)}
+  .donut .dband{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase}
+  .hinfo{flex:1 1 190px;min-width:180px}
+  .hinfo .htitle{font-family:var(--mono);font-size:13px;color:var(--text);font-weight:700;letter-spacing:.02em}
+  .hinfo .hsub{font-family:var(--sans);font-size:11px;color:var(--faint);margin-top:2px;line-height:1.45}
+  .hbars{margin-top:13px;display:flex;flex-direction:column;gap:11px}
+  .sbar .sbk{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-bottom:5px}
+  .sbar .sbk b{color:var(--text);font-weight:700;font-size:12.5px}
+  .sbtrack{height:7px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+  .sbtrack>i{display:block;height:100%;border-radius:99px;transition:width .5s ease}
+  .hleg{margin-top:13px;font-family:var(--sans);font-size:9.5px;color:var(--faint);line-height:1.5}
+  .hleg i{font-style:normal;font-weight:700}
 </style>
 </head>
 <body>
@@ -865,7 +884,7 @@ function renderProfilList(){
 function renderProfilDetail(){
   const app=APP();const v=state.vehicles.find(x=>x.id===nav.pvid);if(!v){nav.pvid=null;return renderProfilList();}
   const many=state.vehicles.length>1;
-  const d=vehicleDist(v),f=vehicleFuel(v),svc=vehicleService(v),health=healthPctV(v);
+  const d=vehicleDist(v),f=vehicleFuel(v),svc=vehicleService(v);
   const M=(k,val,sz)=>`<div class="mcard"><div class="mk">${k}</div><div class="mv"${sz?` style="font-size:${sz}px"`:""}>${val}</div></div>`;
   let h="";
   if(many)h+=`<button class="back" id="pback"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"/></svg> SEMUA KENDARAAN</button>`;
@@ -920,8 +939,25 @@ function renderProfilDetail(){
       ${M("Total Servis", svc.count+'<small>×</small>')}
       ${M("Total Biaya Servis", svc.cost>0?"Rp "+nf(svc.cost):"—",18)}
     </div>`;
-  if(health!=null)h+=`<div class="mcard wide" style="margin-bottom:8px"><div class="mk">Kesehatan Pengingat</div>
-    <div class="mv" style="font-size:20px">${health}%<small>aman</small></div><div class="gauge"><i style="width:${health}%"></i></div></div>`;
+  const oh=operationalHealth(v);
+  h+=`<div class="sect" style="margin-top:16px"><h2>Kesehatan</h2></div>`;
+  if(!oh){
+    h+=`<div class="mcard wide" style="background:transparent;border-style:dashed;margin-bottom:8px"><div class="mk">Skor Operasional</div>
+      <div class="mu" style="margin-top:6px">Belum cukup data. Catat pengisian bensin (sertakan lokasi) dan tambahkan pengingat servis berjadwal untuk memunculkan skor ini.</div></div>`;
+  }else{
+    h+=`<div class="mcard wide hcard" style="margin-bottom:8px">
+      <div class="hdon">${healthDonut(oh)}</div>
+      <div class="hinfo">
+        <div class="htitle">Skor Operasional</div>
+        <div class="hsub">cermin kebiasaan rawatmu, bukan diagnosa mesin</div>
+        <div class="hbars">
+          ${subBar("Kualitas Bensin", oh.fq?oh.fq.score:null, oh.fq?("dari "+oh.fq.basis):"")}
+          ${subBar("Ketepatan Servis", oh.st?oh.st.score:null, oh.st?(oh.st.n+" pengingat"):"")}
+        </div>
+        <div class="hleg">Cincin: <i style="color:var(--green)">hijau</i> kebiasaan baik · <i style="color:var(--orange)">kuning</i> mendekati batas · <i style="color:var(--red)">merah</i> perlu perhatian</div>
+      </div>
+    </div>`;
+  }
 
   const hasChart=monthlySpend(v).length>0;
   if(hasChart)h+=`<div class="sect" style="margin-top:16px"><h2>Biaya Bulanan</h2></div><div id="mchartwrap"></div>`;
@@ -999,6 +1035,92 @@ function garageStats(){
 }
 function healthPct(){let tot=0,ok=0;state.vehicles.forEach(v=>v.reminders.forEach(r=>{tot++;if(status(r,v.odo).sev>0)ok++;}));return tot?Math.round(ok/tot*100):null;}
 function healthPctV(v){let tot=0,ok=0;v.reminders.forEach(r=>{tot++;if(status(r,v.odo).sev>0)ok++;});return tot?Math.round(ok/tot*100):null;}
+
+/* ---------- Skor Operasional (donat hibrida) ---------- */
+const HEALTH_FUEL_W=0.6, HEALTH_SVC_W=0.4;            // bobot dua pilar
+const FUEL_SRC_W={"SPBU":1.0,"Pom Mini":0.6};          // sumber dikenal; sisanya 0.3
+const FUEL_SRC_DEF=0.3, HEALTH_WIN_DAYS=90, HEALTH_OVERDUE_WK=14;
+function srcWeight(place){return FUEL_SRC_W[place]!=null?FUEL_SRC_W[place]:FUEL_SRC_DEF;}
+function healthBand(s){return s>=85?{k:"Excellent",c:"var(--green)"}:s>=70?{k:"Stable",c:"var(--chart-svc)"}:s>=50?{k:"Warning",c:"var(--orange)"}:{k:"Risky",c:"var(--red)"};}
+
+// Pilar 1 — kualitas bensin (jendela 90 hari bergulir)
+function fuelQualityScore(v){
+  const today=todayStr();
+  const win=(v.fuelLog||[]).filter(p=>p.date&&diffDays(p.date,today)>=0&&diffDays(p.date,today)<=HEALTH_WIN_DAYS);
+  if(!win.length)return null;
+  const withL=win.filter(p=>p.liters>0).length;
+  const useLiter=withL>=Math.ceil(win.length*0.6);     // mayoritas isi liter → timbang-liter, else timbang-jumlah
+  let num=0,den=0,zH=0,zN=0,zR=0;
+  win.forEach(p=>{
+    const w=srcWeight(p.place), basis=useLiter?(p.liters>0?p.liters:0):1;
+    if(basis<=0)return;
+    num+=basis*w; den+=basis;
+    if(w>=1.0)zH+=basis*w; else if(w>=0.6)zN+=basis*w; else zR+=basis*w;
+  });
+  if(den<=0)return null;
+  return {score:num/den*100, basis:useLiter?"liter":"jumlah", n:win.length, zH:zH/den*100, zN:zN/den*100, zR:zR/den*100};
+}
+
+// Pilar 2 — ketepatan servis (per pengingat berjadwal; KM→hari via laju robust)
+function svcTimelinessScore(v){
+  const d=vehicleDist(v), perDay=d&&d.perDay>0?d.perDay:0;
+  const tracked=(v.reminders||[]).filter(r=>r.intervalKm>0||(r.intervalMonths>0&&r.baseDate));
+  if(!tracked.length)return null;
+  let sum=0,zH=0,zN=0,zR=0;
+  tracked.forEach(r=>{
+    const st=status(r,v.odo);
+    let overdueDays=0,known=false;
+    if(r.intervalMonths>0&&r.baseDate&&st.dateRem!=null){overdueDays=Math.max(overdueDays,st.dateRem<0?-st.dateRem:0);known=true;}
+    if(r.intervalKm>0&&st.kmRem!=null){
+      const kmOver=st.kmRem<0?-st.kmRem:0;
+      if(kmOver>0){if(perDay>0){overdueDays=Math.max(overdueDays,kmOver/perDay);known=true;}}
+      else known=true;
+    }
+    const ps=known?(overdueDays<=0?100:(overdueDays<=HEALTH_OVERDUE_WK?60:20))
+                  :(st.sev===2?100:st.sev===1?60:20);   // fallback bila laju belum diketahui (reminder KM)
+    sum+=ps;
+    if(ps>=100)zH+=ps; else if(ps>=60)zN+=ps; else zR+=ps;
+  });
+  const n=tracked.length;
+  return {score:sum/n, n, zH:zH/n, zN:zN/n, zR:zR/n};
+}
+
+// Komposit + pecahan zona (zona menjumlah tepat ke skor)
+function operationalHealth(v){
+  const fq=fuelQualityScore(v), st=svcTimelinessScore(v);
+  if(!fq&&!st)return null;
+  const parts=[];
+  if(fq)parts.push({w:HEALTH_FUEL_W,o:fq});
+  if(st)parts.push({w:HEALTH_SVC_W,o:st});
+  const wsum=parts.reduce((a,p)=>a+p.w,0);
+  let score=0,H=0,N=0,R=0;
+  parts.forEach(p=>{const wn=p.w/wsum;score+=wn*p.o.score;H+=wn*p.o.zH;N+=wn*p.o.zN;R+=wn*p.o.zR;});
+  return {score:Math.round(score),H,N,R,fq,st,band:healthBand(score)};
+}
+
+// Donat SVG: cincin terisi ke skor%, dipecah sub-busur hijau/kuning/merah (komposisi), sisa = jalur kosong
+function healthDonut(oh){
+  const C=314.159; // 2π·50
+  let off=0,arcs="";
+  [{v:oh.H,c:"var(--green)"},{v:oh.N,c:"var(--orange)"},{v:oh.R,c:"var(--red)"}].forEach(s=>{
+    if(s.v<=0)return;
+    const len=C*s.v/100;
+    arcs+=`<circle cx="60" cy="60" r="50" fill="none" stroke="${s.c}" stroke-width="12" stroke-dasharray="${len.toFixed(2)} ${(C-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`;
+    off+=len;
+  });
+  return `<svg class="donut" viewBox="0 0 120 120" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Skor ${oh.score}%">
+    <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,.06)" stroke-width="12"/>
+    <g transform="rotate(-90 60 60)">${arcs}</g>
+    <text x="60" y="58" text-anchor="middle" class="dval">${oh.score}%</text>
+    <text x="60" y="76" text-anchor="middle" class="dband" fill="${oh.band.c}">${oh.band.k}</text>
+  </svg>`;
+}
+function subBar(label,score,extra){
+  if(score==null)return `<div class="sbar"><div class="sbk"><span>${label}</span><span style="color:var(--faint)">belum tersedia</span></div><div class="sbtrack"></div></div>`;
+  const b=healthBand(score);
+  return `<div class="sbar"><div class="sbk"><span>${label}${extra?` · ${extra}`:""}</span><b>${Math.round(score)}%</b></div>
+    <div class="sbtrack"><i style="width:${Math.round(score)}%;background:${b.c}"></i></div></div>`;
+}
 function vehicleService(v){let count=0,cost=0,last=null;v.reminders.forEach(r=>r.logs.forEach(l=>{count++;cost+=l.cost||0;if(!last||l.date>last)last=l.date;}));return {count,cost,last};}
 /* biaya per bulan (servis vs bensin), rentang kontinu dari bulan data pertama s/d bulan ini */
 function spendMaps(v){
