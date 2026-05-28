@@ -1038,8 +1038,8 @@ function healthPctV(v){let tot=0,ok=0;v.reminders.forEach(r=>{tot++;if(status(r,
 
 /* ---------- Skor Operasional (donat hibrida) ---------- */
 const HEALTH_FUEL_W=0.6, HEALTH_SVC_W=0.4;            // bobot dua pilar
-const FUEL_SRC_W={"SPBU":1.0,"Pom Mini":0.6};          // sumber dikenal; sisanya 0.3
-const FUEL_SRC_DEF=0.3, HEALTH_WIN_DAYS=90, HEALTH_OVERDUE_WK=14;
+const FUEL_SRC_W={"SPBU":1.0,"Pom Mini":0.65};         // sumber dikenal; sisanya 0.25
+const FUEL_SRC_DEF=0.25, HEALTH_WIN_DAYS=90, HEALTH_OVERDUE_WK=14;
 function srcWeight(place){return FUEL_SRC_W[place]!=null?FUEL_SRC_W[place]:FUEL_SRC_DEF;}
 function healthBand(s){return s>=85?{k:"Excellent",c:"var(--green)"}:s>=70?{k:"Stable",c:"var(--chart-svc)"}:s>=50?{k:"Warning",c:"var(--orange)"}:{k:"Risky",c:"var(--red)"};}
 
@@ -1055,7 +1055,7 @@ function fuelQualityScore(v){
     const w=srcWeight(p.place), basis=useLiter?(p.liters>0?p.liters:0):1;
     if(basis<=0)return;
     num+=basis*w; den+=basis;
-    if(w>=1.0)zH+=basis*w; else if(w>=0.6)zN+=basis*w; else zR+=basis*w;
+    if(w>=FUEL_SRC_W["SPBU"])zH+=basis*w; else if(w>FUEL_SRC_DEF)zN+=basis*w; else zR+=basis*w;
   });
   if(den<=0)return null;
   return {score:num/den*100, basis:useLiter?"liter":"jumlah", n:win.length, zH:zH/den*100, zN:zN/den*100, zR:zR/den*100};
