@@ -1003,8 +1003,17 @@ function monthlySpend(v){
 }
 function chartYears(v){return [...new Set(monthlySpend(v).map(d=>d.year))].sort();}
 /* data chart sesuai scope: angka tahun (Jan–Des / s.d. bulan ini) atau "all" (rentang penuh) */
+function rangeMonths(v,fromKey,toKey){
+  const {svc,fuel}=spendMaps(v);
+  let [y,m]=fromKey.split("-").map(Number);const [ey,em]=toKey.split("-").map(Number);
+  const out=[];let g=0;
+  while((y<ey||(y===ey&&m<=em))&&g++<480){const k=`${y}-${String(m).padStart(2,"0")}`;out.push({key:k,year:y,month:m,svc:svc[k]||0,fuel:fuel[k]||0});m++;if(m>12){m=1;y++;}}
+  return out;
+}
+const isRangeScope=s=>!!(s&&typeof s==="object"&&s.from&&s.to);
 function chartData(v,scope){
   if(scope==="all")return monthlySpend(v);
+  if(isRangeScope(scope))return rangeMonths(v,scope.from,scope.to);
   const {svc,fuel}=spendMaps(v);
   const [cy,cm]=monthKey(todayStr()).split("-").map(Number);
   const endM=scope<cy?12:(scope>cy?0:cm);
@@ -1013,27 +1022,40 @@ function chartData(v,scope){
   return out;
 }
 const MON_SHORT=["","Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
+function rangeLabel(s){
+  const [fy,fm]=s.from.split("-").map(Number),[ty,tm]=s.to.split("-").map(Number);
+  return fy===ty?`${MON_SHORT[fm]}–${MON_SHORT[tm]} ${fy}`:`${MON_SHORT[fm]} '${String(fy).slice(2)}–${MON_SHORT[tm]} '${String(ty).slice(2)}`;
+}
 function monthlyChartInner(v,scope){
   const years=chartYears(v);if(!years.length)return null;
-  const multi=years.length>1;
-  if(scope==null)scope=years[years.length-1];           // default tahun terbaru
+  const multi=years.length>1,rng=isRangeScope(scope);
+  if(scope==null)scope=multi?years[years.length-1]:"all";
   const data=chartData(v,scope);
   const max=Math.max(1,...data.map(d=>Math.max(d.svc,d.fuel)));
   const tSvc=data.reduce((a,d)=>a+d.svc,0),tFuel=data.reduce((a,d)=>a+d.fuel,0);
   let selIdx=-1;for(let i=data.length-1;i>=0;i--){if(data[i].svc>0||data[i].fuel>0){selIdx=i;break;}}
   if(selIdx<0)selIdx=Math.max(0,data.length-1);
-  const fit=scope!=="all";
+  const n=data.length, fit=n<=12;
+  const barW=!fit?9:(n<=3?26:n<=4?22:n<=6?16:n<=8?12:9);   // rentang kecil → batang lebih besar (zoom)
   const bars=data.map((d,i)=>{
     const hs=d.svc>0?Math.max(2,Math.round(d.svc/max*86)):0,hf=d.fuel>0?Math.max(2,Math.round(d.fuel/max*86)):0;
-    const showYear=(scope==="all")?(d.month===1||i===0):(i===0);
-    const divider=(scope==="all")&&d.month===1&&i>0;
+    const showYear=(i===0)||(d.month===1);
+    const divider=d.month===1&&i>0;
     return `<div class="mgrp${i===selIdx?" sel":""}${divider?" ystart":""}" data-label="${MON_SHORT[d.month]} ${d.year}" data-svc="${d.svc}" data-fuel="${d.fuel}">
-      <div class="gb"><div class="bar svc" style="height:${hs}px"></div><div class="bar fuel" style="height:${hf}px"></div></div>
+      <div class="gb"><div class="bar svc" style="height:${hs}px;width:${barW}px"></div><div class="bar fuel" style="height:${hf}px;width:${barW}px"></div></div>
       <div class="ml">${MON_SHORT[d.month]}</div><div class="yl">${showYear?d.year:""}</div></div>`;
   }).join("");
-  const s=data[selIdx]||{month:1,year:scope==="all"?"":scope,svc:0,fuel:0};
-  const tabs=multi?`<div class="ytabs">`+years.map(y=>`<button data-yr="${y}" class="${scope===y?"on":""}">${y}</button>`).join("")+`<button data-yr="all" class="${scope==="all"?"on":""}">Semua</button></div>`:"";
-  const sl=scope==="all"?"Semua":scope;
+  const s=data[selIdx]||{month:1,year:"",svc:0,fuel:0};
+  const showTabs=multi||rng||monthlySpend(v).length>=3;
+  let tabs="";
+  if(showTabs){
+    let t="";
+    if(multi)t+=years.map(y=>`<button data-yr="${y}" class="${(!rng&&scope===y)?"on":""}">${y}</button>`).join("");
+    t+=`<button data-yr="all" class="${scope==="all"?"on":""}">Semua</button>`;
+    t+=`<button data-yr="range" class="${rng?"on":""}">${rng?rangeLabel(scope):"⇄ Rentang"}</button>`;
+    tabs=`<div class="ytabs">${t}</div>`;
+  }
+  const sl=rng?rangeLabel(scope):(scope==="all"?"Semua":scope);
   return `<div class="mchart">
     <div class="crow">
       <div class="rdt"><div class="rk">Biaya Bulanan</div>
@@ -1050,9 +1072,34 @@ function monthlyChartInner(v,scope){
     </div>
   </div>`;
 }
+function rangePickerModal(v,scope,onApply){
+  const curY=+monthKey(todayStr()).slice(0,4);
+  const ys=chartYears(v);const minY=ys.length?ys[0]:curY;
+  const yrs=[];for(let y=minY;y<=Math.max(curY,ys[ys.length-1]||curY);y++)yrs.push(y);
+  let fy,fm,ty,tm;
+  if(isRangeScope(scope)){[fy,fm]=scope.from.split("-").map(Number);[ty,tm]=scope.to.split("-").map(Number);}
+  else{const all=monthlySpend(v);const last=all[all.length-1];ty=last?last.year:curY;tm=last?last.month:1;let yy=ty,mm=tm-2;while(mm<1){mm+=12;yy--;}fy=yy;fm=mm;}
+  const mOpt=sel=>MON_SHORT.slice(1).map((nm,i)=>`<option value="${i+1}" ${sel===i+1?"selected":""}>${nm}</option>`).join("");
+  const yOpt=sel=>yrs.map(y=>`<option value="${y}" ${sel===y?"selected":""}>${y}</option>`).join("");
+  openSheet(`<h3>⇄ Rentang Bulan</h3>
+    <div class="field"><label>Dari</label><div class="two"><select id="rfm">${mOpt(fm)}</select><select id="rfy">${yOpt(fy)}</select></div></div>
+    <div class="field"><label>Sampai</label><div class="two"><select id="rtm">${mOpt(tm)}</select><select id="rty">${yOpt(ty)}</select></div>
+      <div class="hint">Mis. Jan 2026 – Mar 2026 untuk satu triwulan. Rentang kecil ditampilkan lebih besar.</div></div>
+    <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Terapkan</button></div>`);
+  $("#c").onclick=closeSheet;
+  $("#ok").onclick=()=>{
+    let a=`${$("#rfy").value}-${String($("#rfm").value).padStart(2,"0")}`;
+    let b=`${$("#rty").value}-${String($("#rtm").value).padStart(2,"0")}`;
+    if(a>b){const t=a;a=b;b=t;}
+    closeSheet();onApply({from:a,to:b});
+  };
+}
 function mountChart(v){
   const wrap=$("#mchartwrap");if(!wrap)return;
+  const years=chartYears(v);if(!years.length){wrap.innerHTML="";return;}
+  let curScope=years.length>1?years[years.length-1]:"all";
   const paint=scope=>{
+    curScope=scope;
     const html=monthlyChartInner(v,scope);if(html==null){wrap.innerHTML="";return;}
     wrap.innerHTML=html;
     wrap.querySelectorAll(".mgrp").forEach(g=>g.onclick=()=>{
@@ -1061,10 +1108,14 @@ function mountChart(v){
       if(rm)rm.textContent=g.dataset.label;
       if(rv)rv.innerHTML=`<span class="sv">Servis Rp ${nf(+g.dataset.svc)}</span> · <span class="fu">Bensin Rp ${nf(+g.dataset.fuel)}</span>`;
     });
-    wrap.querySelectorAll(".ytabs button").forEach(b=>b.onclick=()=>paint(b.dataset.yr==="all"?"all":+b.dataset.yr));
+    wrap.querySelectorAll(".ytabs button").forEach(b=>b.onclick=()=>{
+      const yr=b.dataset.yr;
+      if(yr==="range"){rangePickerModal(v,curScope,rng=>paint(rng));return;}
+      paint(yr==="all"?"all":+yr);
+    });
     const ms=wrap.querySelector(".mscroll");if(ms)ms.scrollLeft=ms.scrollWidth;
   };
-  paint(null);
+  paint(curScope);
 }
 /* metrik bensin (tank-to-tank, toleran data parsial) */
 function vehicleFuel(v){
