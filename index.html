@@ -1223,9 +1223,9 @@ function odoCheckinModal(vid){
 }
 
 /* ---------- catat isi bensin ---------- */
-const FUEL_TYPES=["Pertalite","Pertamax","Pertamax Turbo","Solar/Dexlite","Isi Sendiri","Lainnya"];
-const FUEL_PLACES=["SPBU","Pom Mini","Isi Sendiri","Lainnya"];
-function fOpt(arr,sel){let a=arr.slice();if(sel&&!a.includes(sel))a=[sel,...a];return `<option value="">—</option>`+a.map(o=>`<option value="${esc(o)}" ${sel===o?"selected":""}>${esc(o)}</option>`).join("");}
+const FUEL_TYPES=["Pertalite","Pertamax","Pertamax Turbo","Solar/Dexlite","Lainnya"];
+const FUEL_PLACES=["SPBU","Pom Mini","Lainnya"];
+function selOpts(arr,sel){return `<option value="">—</option>`+arr.map(o=>`<option value="${esc(o)}" ${sel===o?"selected":""}>${esc(o)}</option>`).join("");}
 function fuelModal(vid,opts){
   opts=opts||{};
   state.selected=vid;const v=vehicle();if(!v)return;
@@ -1234,10 +1234,17 @@ function fuelModal(vid,opts){
   const dDate=isEdit?rec.date:todayStr(), dOdo=isEdit?rec.odo:v.odo;
   const dL=isEdit&&rec.liters?rec.liters:"", dC=isEdit&&rec.cost?rec.cost:"";
   const dFuel=isEdit?(rec.fuel||""):"", dPlace=isEdit?(rec.place||""):"";
+  // nilai yang tak ada di daftar default → tampil sebagai "Lainnya" + isi kolom teks
+  const fuelSel=dFuel===""?"":(FUEL_TYPES.includes(dFuel)?dFuel:"Lainnya");
+  const fuelOther=(dFuel!==""&&!FUEL_TYPES.includes(dFuel))?dFuel:"";
+  const placeSel=dPlace===""?"":(FUEL_PLACES.includes(dPlace)?dPlace:"Lainnya");
+  const placeOther=(dPlace!==""&&!FUEL_PLACES.includes(dPlace))?dPlace:"";
   const detail=full?`<div class="two">
-      <div class="field"><label>Jenis bensin</label><select id="ffuel">${fOpt(FUEL_TYPES,dFuel)}</select></div>
-      <div class="field"><label>Lokasi</label><select id="fplace">${fOpt(FUEL_PLACES,dPlace)}</select></div>
-    </div>`:"";
+      <div class="field"><label>Jenis bensin</label><select id="ffuel">${selOpts(FUEL_TYPES,fuelSel)}</select></div>
+      <div class="field"><label>Lokasi</label><select id="fplace">${selOpts(FUEL_PLACES,placeSel)}</select></div>
+    </div>
+    <div class="field" id="ffuelOtherWrap" style="${fuelSel==="Lainnya"?"":"display:none"}"><label>Tulis jenis bensin</label><input id="ffuelOther" placeholder="cth: Shell V-Power" value="${esc(fuelOther)}"></div>
+    <div class="field" id="fplaceOtherWrap" style="${placeSel==="Lainnya"?"":"display:none"}"><label>Tulis lokasi</label><input id="fplaceOther" placeholder="cth: Shell, jerigen" value="${esc(placeOther)}"></div>`:"";
   openSheet(`<h3>⛽ ${isEdit?"Edit Catatan Bensin":"Catat Isi Bensin"} · ${esc(v.name)}</h3>
     <div class="two">
       <div class="field"><label>Tanggal</label><input id="fd" type="date" value="${dDate}"></div>
@@ -1251,16 +1258,22 @@ function fuelModal(vid,opts){
     <div class="hint" style="margin:-6px 0 14px">Odometer ikut menghitung rata-rata jarak & biaya per km. Isi liter bila ingin tahu konsumsi km/liter.</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const fo=$("#fo");if(!isEdit){fo.focus();fo.select();}
+  if(full){
+    const ff=$("#ffuel"),fp=$("#fplace");
+    ff.onchange=()=>{$("#ffuelOtherWrap").style.display=ff.value==="Lainnya"?"":"none";if(ff.value==="Lainnya")$("#ffuelOther").focus();};
+    fp.onchange=()=>{$("#fplaceOtherWrap").style.display=fp.value==="Lainnya"?"":"none";if(fp.value==="Lainnya")$("#fplaceOther").focus();};
+  }
   $("#c").onclick=()=>{closeSheet();if(onDone)onDone();};
   $("#ok").onclick=()=>{
     const fd=$("#fd").value||todayStr();const fov=clean(fo.value);
     const fl=Math.max(0,parseFloat(String($("#fl").value).replace(",","."))||0);const fc=clean($("#fc").value);
     if(diffDays(todayStr(),fd)>0){toast("Tanggal tidak boleh di masa depan");return;}
     if(fc<=0&&fl<=0){toast("Isi minimal biaya atau liter");return;}
+    const resolve=(selId,otherId)=>{const el=$(selId);if(!el)return "";const sv=el.value;if(sv==="Lainnya"){const t=($(otherId).value||"").trim();return t||"Lainnya";}return sv;};
     const apply=()=>{
       if(!Array.isArray(v.fuelLog))v.fuelLog=[];
-      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=$("#ffuel").value;rec.place=$("#fplace").value;}}
-      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?$("#ffuel").value:"",place:full?$("#fplace").value:""});}
+      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fplace","#fplaceOther");}}
+      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fplace","#fplaceOther"):""});}
       if(fov>v.odo)v.odo=fov;
       save();render();closeSheet();toast(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽");
       if(onDone)onDone();
