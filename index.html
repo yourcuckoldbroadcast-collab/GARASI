@@ -1262,7 +1262,7 @@ function mountChart(v){
 }
 /* metrik bensin (tank-to-tank, toleran data parsial) */
 function vehicleFuel(v){
-  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
   const base={count:f.length,totalCost:0,totalLiters:0,everyDays:null,costPerKm:null,kmPerL:null,perDayCost:null,perMonthCost:null,avgPerFill:null,avgLiters:null};
   if(!f.length)return base;
   const totalCost=f.reduce((s,x)=>s+(x.cost||0),0);
