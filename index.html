@@ -342,6 +342,18 @@
   .mgrp .ml{font-family:var(--mono);font-size:8.5px;color:var(--faint);letter-spacing:.02em}
   .mgrp .yl{font-family:var(--mono);font-size:8px;color:var(--amber-dim);font-weight:700;letter-spacing:.04em;height:10px}
   .mgrp.ystart{border-left:1px solid var(--line2);margin-left:3px;padding-left:3px}
+  .plot.fit{padding-right:0}
+  .plot.fit .mgrp{flex:1 1 0;width:auto;min-width:0}
+  .ytabs{display:flex;gap:6px;margin:0 0 10px;overflow-x:auto;padding-bottom:1px}
+  .ytabs::-webkit-scrollbar{height:0}
+  .ytabs button{flex:0 0 auto;font-family:var(--mono);font-size:11px;letter-spacing:.06em;padding:5px 12px;border-radius:8px;
+    border:1px solid var(--line2);background:var(--panel2);color:var(--muted);cursor:pointer;transition:.12s}
+  .ytabs button:active{transform:scale(.96)}
+  .ytabs button.on{background:rgba(255,196,84,.12);color:var(--amber);border-color:rgba(255,196,84,.35)}
+  .ctot{display:flex;gap:16px;flex-wrap:wrap;margin-top:11px;padding-top:11px;border-top:1px solid var(--line)}
+  .ctot .ct .k{display:block;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;color:var(--faint);text-transform:uppercase;margin-bottom:3px}
+  .ctot .ct b{font-family:var(--mono);font-size:13px;font-weight:700}
+  .ctot .ct.sv b{color:var(--chart-svc)} .ctot .ct.fu b{color:var(--amber)} .ctot .ct.to b{color:var(--text)}
 </style>
 </head>
 <body>
@@ -891,7 +903,8 @@ function renderProfilDetail(){
   if(health!=null)h+=`<div class="mcard wide" style="margin-bottom:8px"><div class="mk">Kesehatan Pengingat</div>
     <div class="mv" style="font-size:20px">${health}%<small>aman</small></div><div class="gauge"><i style="width:${health}%"></i></div></div>`;
 
-  h+=monthlyChartHTML(v);
+  const hasChart=monthlySpend(v).length>0;
+  if(hasChart)h+=`<div class="sect" style="margin-top:16px"><h2>Biaya Bulanan</h2></div><div id="mchartwrap"></div>`;
 
   h+=`<div class="mcard wide" style="margin-top:6px;background:transparent;border-style:dashed">
     <div class="mu">Jarak & biaya bensin per km dihitung dari odometer pada riwayat servis, check-in, dan pengisian bensin (metode tank-to-tank). Biaya servis akurat hanya jika tiap servis kamu isi biayanya.</div></div>
@@ -901,13 +914,7 @@ function renderProfilDetail(){
   app.querySelector("#pchk").onclick=()=>odoCheckinModal(v.id);
   app.querySelector("#pfuel").onclick=()=>fuelModal(v.id);
   app.querySelector("#pgo").onclick=()=>openVehicle(v.id);
-  app.querySelectorAll(".mgrp").forEach(g=>g.onclick=()=>{
-    app.querySelectorAll(".mgrp").forEach(x=>x.classList.remove("sel"));g.classList.add("sel");
-    const rm=app.querySelector("#mrm"),rv=app.querySelector("#mrv");
-    if(rm)rm.textContent=g.dataset.label;
-    if(rv)rv.innerHTML=`<span class="sv">Servis Rp ${nf(+g.dataset.svc)}</span> · <span class="fu">Bensin Rp ${nf(+g.dataset.fuel)}</span>`;
-  });
-  const ms=app.querySelector(".mscroll");if(ms)ms.scrollLeft=ms.scrollWidth;
+  if(hasChart)mountChart(v);
 }
 
 /* ---------- statistik (turunan, read-only) ---------- */
@@ -973,49 +980,91 @@ function healthPct(){let tot=0,ok=0;state.vehicles.forEach(v=>v.reminders.forEac
 function healthPctV(v){let tot=0,ok=0;v.reminders.forEach(r=>{tot++;if(status(r,v.odo).sev>0)ok++;});return tot?Math.round(ok/tot*100):null;}
 function vehicleService(v){let count=0,cost=0,last=null;v.reminders.forEach(r=>r.logs.forEach(l=>{count++;cost+=l.cost||0;if(!last||l.date>last)last=l.date;}));return {count,cost,last};}
 /* biaya per bulan (servis vs bensin), rentang kontinu dari bulan data pertama s/d bulan ini */
-function monthlySpend(v){
+function spendMaps(v){
   const svc={},fuel={};
   v.reminders.forEach(r=>r.logs.forEach(l=>{if(l.cost>0){const k=l.date.slice(0,7);svc[k]=(svc[k]||0)+l.cost;}}));
   (v.fuelLog||[]).forEach(p=>{if(p.cost>0){const k=p.date.slice(0,7);fuel[k]=(fuel[k]||0)+p.cost;}});
+  return {svc,fuel};
+}
+function monthlySpend(v){
+  const {svc,fuel}=spendMaps(v);
   const keys=[...new Set([...Object.keys(svc),...Object.keys(fuel)])].sort();
   if(!keys.length)return [];
   let [y,m]=keys[0].split("-").map(Number);
   let end=monthKey(todayStr());if(end<keys[keys.length-1])end=keys[keys.length-1];
   const [ey,em]=end.split("-").map(Number);
   const out=[];let guard=0;
-  while((y<ey||(y===ey&&m<=em))&&guard++<240){
+  while((y<ey||(y===ey&&m<=em))&&guard++<360){
     const k=`${y}-${String(m).padStart(2,"0")}`;
     out.push({key:k,year:y,month:m,svc:svc[k]||0,fuel:fuel[k]||0});
     m++;if(m>12){m=1;y++;}
   }
   return out;
 }
+function chartYears(v){return [...new Set(monthlySpend(v).map(d=>d.year))].sort();}
+/* data chart sesuai scope: angka tahun (Jan–Des / s.d. bulan ini) atau "all" (rentang penuh) */
+function chartData(v,scope){
+  if(scope==="all")return monthlySpend(v);
+  const {svc,fuel}=spendMaps(v);
+  const [cy,cm]=monthKey(todayStr()).split("-").map(Number);
+  const endM=scope<cy?12:(scope>cy?0:cm);
+  const out=[];
+  for(let m=1;m<=endM;m++){const k=`${scope}-${String(m).padStart(2,"0")}`;out.push({key:k,year:scope,month:m,svc:svc[k]||0,fuel:fuel[k]||0});}
+  return out;
+}
 const MON_SHORT=["","Jan","Feb","Mar","Apr","Mei","Jun","Jul","Agu","Sep","Okt","Nov","Des"];
-function monthlyChartHTML(v){
-  const data=monthlySpend(v);
-  if(!data.length)return "";
+function monthlyChartInner(v,scope){
+  const years=chartYears(v);if(!years.length)return null;
+  const multi=years.length>1;
+  if(scope==null)scope=years[years.length-1];           // default tahun terbaru
+  const data=chartData(v,scope);
   const max=Math.max(1,...data.map(d=>Math.max(d.svc,d.fuel)));
-  let selIdx=data.length-1;
-  for(let i=data.length-1;i>=0;i--){if(data[i].svc>0||data[i].fuel>0){selIdx=i;break;}}
+  const tSvc=data.reduce((a,d)=>a+d.svc,0),tFuel=data.reduce((a,d)=>a+d.fuel,0);
+  let selIdx=-1;for(let i=data.length-1;i>=0;i--){if(data[i].svc>0||data[i].fuel>0){selIdx=i;break;}}
+  if(selIdx<0)selIdx=Math.max(0,data.length-1);
+  const fit=scope!=="all";
   const bars=data.map((d,i)=>{
-    const hs=d.svc>0?Math.max(2,Math.round(d.svc/max*86)):0;
-    const hf=d.fuel>0?Math.max(2,Math.round(d.fuel/max*86)):0;
-    const ystart=(d.month===1||i===0);
-    return `<div class="mgrp${i===selIdx?" sel":""}${ystart?" ystart":""}" data-label="${MON_SHORT[d.month]} ${d.year}" data-svc="${d.svc}" data-fuel="${d.fuel}">
+    const hs=d.svc>0?Math.max(2,Math.round(d.svc/max*86)):0,hf=d.fuel>0?Math.max(2,Math.round(d.fuel/max*86)):0;
+    const showYear=(scope==="all")?(d.month===1||i===0):(i===0);
+    const divider=(scope==="all")&&d.month===1&&i>0;
+    return `<div class="mgrp${i===selIdx?" sel":""}${divider?" ystart":""}" data-label="${MON_SHORT[d.month]} ${d.year}" data-svc="${d.svc}" data-fuel="${d.fuel}">
       <div class="gb"><div class="bar svc" style="height:${hs}px"></div><div class="bar fuel" style="height:${hf}px"></div></div>
-      <div class="ml">${MON_SHORT[d.month]}</div><div class="yl">${ystart?d.year:""}</div></div>`;
+      <div class="ml">${MON_SHORT[d.month]}</div><div class="yl">${showYear?d.year:""}</div></div>`;
   }).join("");
-  const s=data[selIdx];
-  return `<div class="sect" style="margin-top:16px"><h2>Biaya Bulanan</h2></div>
-    <div class="mchart">
-      <div class="crow">
-        <div class="rdt"><div class="rk">Biaya Bulanan</div>
-          <div class="rm" id="mrm">${MON_SHORT[s.month]} ${s.year}</div>
-          <div class="rv" id="mrv"><span class="sv">Servis Rp ${nf(s.svc)}</span> · <span class="fu">Bensin Rp ${nf(s.fuel)}</span></div></div>
-        <div class="legend"><span class="lg"><i class="svc"></i>Servis</span><span class="lg"><i class="fuel"></i>Bensin</span></div>
-      </div>
-      <div class="mscroll"><div class="plot">${bars}</div></div>
-    </div>`;
+  const s=data[selIdx]||{month:1,year:scope==="all"?"":scope,svc:0,fuel:0};
+  const tabs=multi?`<div class="ytabs">`+years.map(y=>`<button data-yr="${y}" class="${scope===y?"on":""}">${y}</button>`).join("")+`<button data-yr="all" class="${scope==="all"?"on":""}">Semua</button></div>`:"";
+  const sl=scope==="all"?"Semua":scope;
+  return `<div class="mchart">
+    <div class="crow">
+      <div class="rdt"><div class="rk">Biaya Bulanan</div>
+        <div class="rm" id="mrm">${MON_SHORT[s.month]} ${s.year}</div>
+        <div class="rv" id="mrv"><span class="sv">Servis Rp ${nf(s.svc)}</span> · <span class="fu">Bensin Rp ${nf(s.fuel)}</span></div></div>
+      <div class="legend"><span class="lg"><i class="svc"></i>Servis</span><span class="lg"><i class="fuel"></i>Bensin</span></div>
+    </div>
+    ${tabs}
+    <div class="mscroll"><div class="plot${fit?" fit":""}">${bars}</div></div>
+    <div class="ctot">
+      <div class="ct sv"><span class="k">Servis ${sl}</span><b>Rp ${nf(tSvc)}</b></div>
+      <div class="ct fu"><span class="k">Bensin ${sl}</span><b>Rp ${nf(tFuel)}</b></div>
+      <div class="ct to"><span class="k">Total ${sl}</span><b>Rp ${nf(tSvc+tFuel)}</b></div>
+    </div>
+  </div>`;
+}
+function mountChart(v){
+  const wrap=$("#mchartwrap");if(!wrap)return;
+  const paint=scope=>{
+    const html=monthlyChartInner(v,scope);if(html==null){wrap.innerHTML="";return;}
+    wrap.innerHTML=html;
+    wrap.querySelectorAll(".mgrp").forEach(g=>g.onclick=()=>{
+      wrap.querySelectorAll(".mgrp").forEach(x=>x.classList.remove("sel"));g.classList.add("sel");
+      const rm=wrap.querySelector("#mrm"),rv=wrap.querySelector("#mrv");
+      if(rm)rm.textContent=g.dataset.label;
+      if(rv)rv.innerHTML=`<span class="sv">Servis Rp ${nf(+g.dataset.svc)}</span> · <span class="fu">Bensin Rp ${nf(+g.dataset.fuel)}</span>`;
+    });
+    wrap.querySelectorAll(".ytabs button").forEach(b=>b.onclick=()=>paint(b.dataset.yr==="all"?"all":+b.dataset.yr));
+    const ms=wrap.querySelector(".mscroll");if(ms)ms.scrollLeft=ms.scrollWidth;
+  };
+  paint(null);
 }
 /* metrik bensin (tank-to-tank, toleran data parsial) */
 function vehicleFuel(v){
@@ -1467,7 +1516,7 @@ function aboutModal(){
   openSheet(`<h3>ℹ️ Tentang Garasi Log</h3>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:-4px 0 14px">Aplikasi offline. Semua data disimpan <b style="color:var(--text)">di perangkat ini saja</b> — tidak ada server, tidak dikirim ke mana pun.</p>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 16px">⚠️ Data bisa hilang jika kamu menghapus data situs. Biasakan <b style="color:var(--amber)">Export backup</b> rutin lalu simpan file .json-nya di Google Drive.</p>
-    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 4 · papan kerja + catat cepat bensin/odometer per kendaraan, profil per kendaraan, telemetri jarak & bensin (tank-to-tank) dengan baseline harian robust, deteksi perjalanan jauh, servis mendatang di beranda, dan grafik biaya bulanan (servis vs bensin). Tetap kompatibel impor backup lama.</p>
+    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 4 · papan kerja + catat cepat bensin/odometer per kendaraan, profil per kendaraan, telemetri jarak & bensin (tank-to-tank) dengan baseline harian robust, deteksi perjalanan jauh, servis mendatang di beranda, dan grafik biaya bulanan (servis vs bensin) dengan arsip per tahun grafik biaya bulanan (servis vs bensin). total. Tetap kompatibel impor backup lama.</p>
     <div class="row"><button class="btn primary" id="c">Mengerti</button></div>`);
   $("#c").onclick=closeSheet;
 }
