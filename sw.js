@@ -1,14 +1,14 @@
 /* Garasi Log — service worker
    Strategi: cache-first untuk app shell supaya aplikasi tetap jalan 100% offline.
    Naikkan versi CACHE saat ada update file agar cache lama dibuang. */
-const CACHE = "garasi-log-v19";
+const CACHE = "garasi-log-v20";
 const ASSETS = [
   "./",
   "./index.html",
   "./manifest.json",
-  "./icon-192.png",
-  "./icon-512.png",
-  "./icon-48.png"
+  "./icon192.png",
+  "./icon512.png",
+  "./icon48.png"
 ];
 
 self.addEventListener("install", (e) => {
