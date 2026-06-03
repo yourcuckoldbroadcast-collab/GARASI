@@ -529,12 +529,19 @@ function migrate(s){
       delete r.base;
       r.baseOdo=clean(r.baseOdo);
       if(r.baseDate&&!/^\d{4}-\d{2}-\d{2}$/.test(r.baseDate))r.baseDate=null;
+      // anchor awal (kondisi sebelum ada catatan servis) — dipakai saat Riwayat kosong
+      if(r.initOdo==null)r.initOdo=clean(r.baseOdo);else r.initOdo=clean(r.initOdo);
+      if(r.initDate===undefined)r.initDate=r.baseDate||null;
+      if(r.initDate&&!/^\d{4}-\d{2}-\d{2}$/.test(r.initDate))r.initDate=null;
       if(typeof r.pinned!=="boolean")r.pinned=false;
       if(r.order==null)r.order=ri;
       if(!Array.isArray(r.logs))r.logs=[];
+      r.logs=r.logs.filter(l=>l&&/^\d{4}-\d{2}-\d{2}$/.test(l.date))
+        .map(l=>({id:l.id||uid(),date:l.date,odo:clean(l.odo),cost:clean(l.cost),note:typeof l.note==="string"?l.note:""}));
       if(r.category===undefined)r.category=null;
       if(r.category&&!dictFor(v).some(c=>c.name===r.category))r.category=null;
       r.id=r.id||uid();
+      recomputeBase(r); // selaraskan acuan siklus dengan Riwayat
     });
     if(!Array.isArray(v.workOrders))v.workOrders=[];
     const _rids=new Set(v.reminders.map(r=>r.id));
@@ -569,6 +576,27 @@ function load(){
 function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){toast("Gagal menyimpan");}}
 const vehicle=()=>state.vehicles.find(v=>v.id===state.selected)||null;
 const findRem=id=>{const v=vehicle();return v?v.reminders.find(r=>r.id===id):null;};
+
+/* ---------- acuan siklus = TURUNAN dari Riwayat Servis (single source of truth) ----------
+   baseOdo/baseDate bukan lagi angka yang berdiri sendiri, melainkan cache yang dihitung
+   ulang dari {anchor awal + seluruh catatan servis}. Acuan = peristiwa TERBARU.
+   Dipanggil tiap kali log servis ditambah / diedit / dihapus → "terakhir diganti"
+   tak pernah melenceng dari Riwayat, dan servis yang di-backfill tak merusak siklus. */
+function recomputeBase(r){
+  const ev=[];
+  if(r.initDate)ev.push({date:r.initDate,odo:clean(r.initOdo)});
+  (r.logs||[]).forEach(l=>{if(l&&l.date)ev.push({date:l.date,odo:clean(l.odo)});});
+  if(!ev.length){r.baseOdo=clean(r.initOdo);r.baseDate=r.initDate||null;return;}
+  ev.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:a.odo-b.odo);
+  const last=ev[ev.length-1];
+  r.baseOdo=last.odo;r.baseDate=last.date;
+}
+/* true bila tanggal d lebih lama dari servis terbaru yang sudah ada (tak akan menggeser siklus) */
+function isStale(r,d){
+  let latest=r.initDate||null;
+  (r.logs||[]).forEach(l=>{if(l&&l.date&&(!latest||l.date>latest))latest=l.date;});
+  return latest!=null&&d<latest;
+}
 
 /* ---------- status (hybrid km + bulan, mana lebih dulu) ---------- */
 function status(r,odo){
@@ -1038,7 +1066,7 @@ function healthPctV(v){let tot=0,ok=0;v.reminders.forEach(r=>{tot++;if(status(r,
 
 /* ---------- Skor Operasional (donat hibrida) ---------- */
 const HEALTH_FUEL_W=0.6, HEALTH_SVC_W=0.4;            // bobot dua pilar
-const FUEL_SRC_W={"SPBU":1.0,"Pom Mini":0.65};         // sumber dikenal; sisanya 0.25
+const FUEL_SRC_W={"Pertamina":1.0,"Shell":1.0,"Vivo":1.0,"BP-AKR":1.0,"SPBU":1.0,"Pom Mini":0.65}; // SPBU resmi=1.0, pom mini=0.65, manual/tak dikenal=0.25
 const FUEL_SRC_DEF=0.25, HEALTH_WIN_DAYS=90, HEALTH_OVERDUE_WK=14;
 function srcWeight(place){return FUEL_SRC_W[place]!=null?FUEL_SRC_W[place]:FUEL_SRC_DEF;}
 function healthBand(s){return s>=85?{k:"Excellent",c:"var(--green)"}:s>=70?{k:"Stable",c:"var(--chart-svc)"}:s>=50?{k:"Warning",c:"var(--orange)"}:{k:"Risky",c:"var(--red)"};}
@@ -1345,9 +1373,42 @@ function odoCheckinModal(vid){
 }
 
 /* ---------- catat isi bensin ---------- */
-const FUEL_TYPES=["Pertalite","Pertamax","Pertamax Turbo","Solar/Dexlite","Lainnya"];
-const FUEL_PLACES=["SPBU","Pom Mini","Lainnya"];
-function selOpts(arr,sel){return `<option value="">—</option>`+arr.map(o=>`<option value="${esc(o)}" ${sel===o?"selected":""}>${esc(o)}</option>`).join("");}
+/* ---------- kamus SPBU & BBM (default; tetap bisa diperluas manual via "Lainnya…") ----------
+   place = merek SPBU, fuel = nama produk. t = label skala (RON/CN/Diesel) untuk bantu pilih. */
+const SPBU_DICT=[
+  {brand:"Pertamina",fuels:[
+    {n:"Pertalite",t:"RON 90"},{n:"Pertamax",t:"RON 92"},{n:"Pertamax Green 95",t:"RON 95"},{n:"Pertamax Turbo",t:"RON 98"},
+    {n:"BioSolar",t:"CN 48"},{n:"Dexlite",t:"CN 51"},{n:"Pertamina Dex",t:"CN 53"}]},
+  {brand:"Shell",fuels:[
+    {n:"Shell Super",t:"RON 92"},{n:"Shell V-Power",t:"RON 95"},{n:"Shell V-Power Nitro+",t:"RON 98"},
+    {n:"Shell V-Power Diesel",t:"Diesel"},{n:"Shell Diesel Extra",t:"Diesel"}]},
+  {brand:"Vivo",fuels:[
+    {n:"Revvo 90",t:"RON 90"},{n:"Revvo 92",t:"RON 92"},{n:"Revvo 95",t:"RON 95"},
+    {n:"Diesel Primus Plus",t:"Diesel"}]},
+  {brand:"BP-AKR",fuels:[
+    {n:"BP 92",t:"RON 92"},{n:"BP Ultimate",t:"RON 95"},{n:"BP Ultimate Diesel",t:"Diesel"}]},
+  {brand:"Pom Mini",fuels:[
+    {n:"Pertalite",t:"RON 90"},{n:"Pertamax",t:"RON 92"},{n:"Solar",t:"Diesel"}]}
+];
+const OTHER="Lainnya…"; // sentinel input manual (hybrid) — JANGAN dipakai sebagai nilai tersimpan
+function brandList(){return SPBU_DICT.map(b=>b.brand);}
+function fuelsForBrand(b){
+  const hit=SPBU_DICT.find(x=>x.brand===b);
+  if(hit)return hit.fuels;
+  const seen=new Set(),out=[];          // brand kosong/custom → gabungan semua BBM (dedup nama)
+  SPBU_DICT.forEach(x=>x.fuels.forEach(f=>{if(!seen.has(f.n)){seen.add(f.n);out.push(f);}}));
+  return out;
+}
+function optBrand(sel){
+  return `<option value="">— pilih SPBU —</option>`
+    +brandList().map(b=>`<option value="${esc(b)}" ${sel===b?"selected":""}>${esc(b)}</option>`).join("")
+    +`<option value="${OTHER}" ${sel===OTHER?"selected":""}>${OTHER}</option>`;
+}
+function optFuel(list,sel){
+  return `<option value="">— pilih bensin —</option>`
+    +list.map(f=>`<option value="${esc(f.n)}" ${sel===f.n?"selected":""}>${esc(f.n)}${f.t?" · "+esc(f.t):""}</option>`).join("")
+    +`<option value="${OTHER}" ${sel===OTHER?"selected":""}>${OTHER}</option>`;
+}
 function fuelModal(vid,opts){
   opts=opts||{};
   state.selected=vid;const v=vehicle();if(!v)return;
@@ -1356,17 +1417,22 @@ function fuelModal(vid,opts){
   const dDate=isEdit?rec.date:todayStr(), dOdo=isEdit?rec.odo:v.odo;
   const dL=isEdit&&rec.liters?rec.liters:"", dC=isEdit&&rec.cost?rec.cost:"";
   const dFuel=isEdit?(rec.fuel||""):"", dPlace=isEdit?(rec.place||""):"";
-  // nilai yang tak ada di daftar default → tampil sebagai "Lainnya" + isi kolom teks
-  const fuelSel=dFuel===""?"":(FUEL_TYPES.includes(dFuel)?dFuel:"Lainnya");
-  const fuelOther=(dFuel!==""&&!FUEL_TYPES.includes(dFuel))?dFuel:"";
-  const placeSel=dPlace===""?"":(FUEL_PLACES.includes(dPlace)?dPlace:"Lainnya");
-  const placeOther=(dPlace!==""&&!FUEL_PLACES.includes(dPlace))?dPlace:"";
+  // SPBU (lokasi): cocokkan ke kamus → bila tak ada, tampil "Lainnya…" + kolom teks (data lama tetap aman)
+  const knownBrand=SPBU_DICT.some(b=>b.brand===dPlace);
+  const brandSel=dPlace===""?"":(knownBrand?dPlace:OTHER);
+  const brandOther=(dPlace!==""&&!knownBrand)?dPlace:"";
+  // daftar bensin mengikuti SPBU terpilih (atau gabungan semua bila kosong/custom)
+  const fuelList=fuelsForBrand(brandSel===OTHER?"":brandSel);
+  const knownFuel=fuelList.some(f=>f.n===dFuel);
+  const fuelSel=dFuel===""?"":(knownFuel?dFuel:OTHER);
+  const fuelOther=(dFuel!==""&&!knownFuel)?dFuel:"";
   const detail=full?`<div class="two">
-      <div class="field"><label>Jenis bensin</label><select id="ffuel">${selOpts(FUEL_TYPES,fuelSel)}</select></div>
-      <div class="field"><label>Lokasi</label><select id="fplace">${selOpts(FUEL_PLACES,placeSel)}</select></div>
+      <div class="field"><label>SPBU / lokasi</label><select id="fbrand">${optBrand(brandSel)}</select></div>
+      <div class="field"><label>Jenis bensin</label><select id="ffuel">${optFuel(fuelList,fuelSel)}</select></div>
     </div>
-    <div class="field" id="ffuelOtherWrap" style="${fuelSel==="Lainnya"?"":"display:none"}"><label>Tulis jenis bensin</label><input id="ffuelOther" placeholder="cth: Shell V-Power" value="${esc(fuelOther)}"></div>
-    <div class="field" id="fplaceOtherWrap" style="${placeSel==="Lainnya"?"":"display:none"}"><label>Tulis lokasi</label><input id="fplaceOther" placeholder="cth: Shell, jerigen" value="${esc(placeOther)}"></div>`:"";
+    <div class="field" id="fbrandOtherWrap" style="${brandSel===OTHER?"":"display:none"}"><label>Tulis nama SPBU / lokasi</label><input id="fbrandOther" placeholder="cth: SPBU lokal / jerigen eceran" value="${esc(brandOther)}"></div>
+    <div class="field" id="ffuelOtherWrap" style="${fuelSel===OTHER?"":"display:none"}"><label>Tulis jenis bensin</label><input id="ffuelOther" placeholder="cth: bensin eceran" value="${esc(fuelOther)}"></div>
+    <div class="hint" style="margin:-6px 0 0">Pilih SPBU dulu — daftar bensin menyesuaikan. SPBU resmi terhitung penuh di Skor Operasional; "Lainnya…" dihitung sebagai sumber tak terverifikasi.</div>`:"";
   openSheet(`<h3>⛽ ${isEdit?"Edit Catatan Bensin":"Catat Isi Bensin"} · ${esc(v.name)}</h3>
     <div class="two">
       <div class="field"><label>Tanggal</label><input id="fd" type="date" value="${dDate}"></div>
@@ -1381,9 +1447,19 @@ function fuelModal(vid,opts){
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const fo=$("#fo");if(!isEdit){fo.focus();fo.select();}
   if(full){
-    const ff=$("#ffuel"),fp=$("#fplace");
-    ff.onchange=()=>{$("#ffuelOtherWrap").style.display=ff.value==="Lainnya"?"":"none";if(ff.value==="Lainnya")$("#ffuelOther").focus();};
-    fp.onchange=()=>{$("#fplaceOtherWrap").style.display=fp.value==="Lainnya"?"":"none";if(fp.value==="Lainnya")$("#fplaceOther").focus();};
+    const fb=$("#fbrand"),ff=$("#ffuel");
+    const syncFuel=()=>{                                   // bangun ulang daftar bensin sesuai SPBU terpilih
+      const list=fuelsForBrand(fb.value===OTHER?"":fb.value);
+      const cur=ff.value, keep=(list.some(f=>f.n===cur)||cur===OTHER)?cur:"";
+      ff.innerHTML=optFuel(list,keep);
+      $("#ffuelOtherWrap").style.display=ff.value===OTHER?"":"none";
+    };
+    fb.onchange=()=>{
+      $("#fbrandOtherWrap").style.display=fb.value===OTHER?"":"none";
+      if(fb.value===OTHER)$("#fbrandOther").focus();
+      syncFuel();
+    };
+    ff.onchange=()=>{$("#ffuelOtherWrap").style.display=ff.value===OTHER?"":"none";if(ff.value===OTHER)$("#ffuelOther").focus();};
   }
   $("#c").onclick=()=>{closeSheet();if(onDone)onDone();};
   $("#ok").onclick=()=>{
@@ -1391,11 +1467,11 @@ function fuelModal(vid,opts){
     const fl=Math.max(0,parseFloat(String($("#fl").value).replace(",","."))||0);const fc=clean($("#fc").value);
     if(diffDays(todayStr(),fd)>0){toast("Tanggal tidak boleh di masa depan");return;}
     if(fc<=0&&fl<=0){toast("Isi minimal biaya atau liter");return;}
-    const resolve=(selId,otherId)=>{const el=$(selId);if(!el)return "";const sv=el.value;if(sv==="Lainnya"){const t=($(otherId).value||"").trim();return t||"Lainnya";}return sv;};
+    const resolve=(selId,otherId)=>{const el=$(selId);if(!el)return "";const sv=el.value;if(sv===OTHER){return ($(otherId).value||"").trim();}return sv;};
     const apply=()=>{
       if(!Array.isArray(v.fuelLog))v.fuelLog=[];
-      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fplace","#fplaceOther");}}
-      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fplace","#fplaceOther"):""});}
+      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fbrand","#fbrandOther");}}
+      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fbrand","#fbrandOther"):""});}
       if(fov>v.odo)v.odo=fov;
       save();render();closeSheet();toast(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽");
       if(onDone)onDone();
@@ -1596,8 +1672,9 @@ function reminderModal(editId,prefill){
   const initCat=isEdit?r.category:(P.category||"");
   const initIk=isEdit?(r.intervalKm||""):(P.intervalKm||"");
   const initIm=isEdit?(r.intervalMonths||""):(P.intervalMonths||"");
-  const initBo=isEdit?r.baseOdo:v.odo;
-  const initBd=(isEdit&&r.baseDate)?r.baseDate:(P.baseDate||todayStr());
+  const hasLogs=isEdit&&Array.isArray(r.logs)&&r.logs.length>0;
+  const initBo=isEdit?(r.initOdo!=null?r.initOdo:r.baseOdo):v.odo;
+  const initBd=(isEdit&&r.initDate)?r.initDate:(P.baseDate||todayStr());
   openSheet(`<h3>${isEdit?"✏️ Edit Pengingat":"🔔 Pengingat Baru"}</h3>
     <div class="field" id="fName"><label>Nama pengingat</label><input id="rn" placeholder="cth: Oli Mesin, Ganti Ban" autocomplete="off" value="${esc(initName)}"><div class="err">Nama tidak boleh kosong.</div></div>
     <div class="field"><label>Kategori (opsional — bantu auto-urut prioritas)</label><select id="rc">${catOptions(initCat,v)}</select><div class="hint">Kosongkan saja kalau ragu; app menebak prioritas dari nama.</div></div>
@@ -1607,10 +1684,10 @@ function reminderModal(editId,prefill){
     </div>
     <div class="field" id="fInt"><div class="err">Isi minimal salah satu: interval km atau bulan.</div></div>
     <div class="two">
-      <div class="field" id="fBo"><label>Terakhir diganti — odometer</label><input id="rbo" inputmode="numeric" value="${initBo}"><div class="err"></div></div>
-      <div class="field" id="fBd"><label>Terakhir diganti — tanggal</label><input id="rbd" type="date" value="${initBd}"><div class="err"></div></div>
+      <div class="field" id="fBo"><label>${hasLogs?"Anchor awal — odometer":"Terakhir diganti — odometer"}</label><input id="rbo" inputmode="numeric" value="${initBo}"><div class="err"></div></div>
+      <div class="field" id="fBd"><label>${hasLogs?"Anchor awal — tanggal":"Terakhir diganti — tanggal"}</label><input id="rbd" type="date" value="${initBd}"><div class="err"></div></div>
     </div>
-    <div class="hint" style="margin:-6px 0 14px">Default = kondisi sekarang. Tanggal hanya dipakai jika interval bulan diisi.</div>
+    <div class="hint" style="margin:-6px 0 14px">${hasLogs?"Acuan jatuh tempo diambil dari servis <b>terbaru di Riwayat</b>. Kolom ini cuma anchor cadangan bila seluruh Riwayat dikosongkan.":"Default = kondisi sekarang. Tanggal hanya dipakai jika interval bulan diisi."}</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const rn=$("#rn");if(!isEdit)rn.focus();$("#c").onclick=()=>isEdit?detailSheet(editId):closeSheet();
   $("#ok").onclick=()=>{
@@ -1619,17 +1696,25 @@ function reminderModal(editId,prefill){
     let ok=true;
     $("#fName").classList.toggle("bad",!name);if(!name)ok=false;
     $("#fInt").classList.toggle("bad",ik<=0&&im<=0);if(ik<=0&&im<=0)ok=false;
-    // BLOK: mustahil
+    // BLOK: mustahil (hanya relevan untuk anchor; saat ada Riwayat, acuan diambil dari log)
     const fBo=$("#fBo"),fBd=$("#fBd");fBo.classList.remove("bad");fBd.classList.remove("bad");
-    if(bo>v.odo){fBo.classList.add("bad");fBo.querySelector(".err").textContent=`Tidak boleh lebih dari odometer kendaraan (${nf(v.odo)} km).`;ok=false;}
-    if(im>0&&diffDays(todayStr(),bd)>0){fBd.classList.add("bad");fBd.querySelector(".err").textContent="Tanggal tidak boleh di masa depan.";ok=false;}
+    if(!hasLogs){
+      if(bo>v.odo){fBo.classList.add("bad");fBo.querySelector(".err").textContent=`Tidak boleh lebih dari odometer kendaraan (${nf(v.odo)} km).`;ok=false;}
+      if(im>0&&diffDays(todayStr(),bd)>0){fBd.classList.add("bad");fBd.querySelector(".err").textContent="Tanggal tidak boleh di masa depan.";ok=false;}
+    }
     if(!ok)return;
-    // TEGUR: mencurigakan (langsung lewat)
-    const overKm=ik>0&&(bo+ik)<=v.odo;
-    const overDate=im>0&&diffDays(addMonths(bd,im),todayStr())>0;
+    // TEGUR: mencurigakan (langsung lewat) — hanya untuk pengingat tanpa Riwayat
+    const overKm=!hasLogs&&ik>0&&(bo+ik)<=v.odo;
+    const overDate=!hasLogs&&im>0&&diffDays(addMonths(bd,im),todayStr())>0;
     const apply=()=>{
-      if(isEdit){r.name=name;r.category=$("#rc").value||null;r.intervalKm=ik;r.intervalMonths=im;r.baseOdo=bo;r.baseDate=im>0?bd:(ik>0?null:bd);}
-      else{const nr={id:uid(),name,category:$("#rc").value||null,intervalKm:ik,intervalMonths:im,baseOdo:bo,baseDate:im>0?bd:null,pinned:false,order:v.reminders.length,logs:[]};v.reminders.push(nr);}
+      if(isEdit){
+        r.name=name;r.category=$("#rc").value||null;r.intervalKm=ik;r.intervalMonths=im;
+        if(!hasLogs){r.initOdo=bo;r.initDate=im>0?bd:(ik>0?null:bd);}
+        recomputeBase(r);
+      }else{
+        const nr={id:uid(),name,category:$("#rc").value||null,intervalKm:ik,intervalMonths:im,initOdo:bo,initDate:im>0?bd:null,baseOdo:bo,baseDate:im>0?bd:null,pinned:false,order:v.reminders.length,logs:[]};
+        recomputeBase(nr);v.reminders.push(nr);
+      }
       save();render();toast(isEdit?"Pengingat diperbarui":"Pengingat ditambahkan");
       if(isEdit)detailSheet(editId);else closeSheet();
     };
@@ -1658,10 +1743,12 @@ function serviceModal(id,returnDetail,afterCommit){
     const sd=$("#sd").value||todayStr();const so=clean($("#so").value);const sc=clean($("#sc").value);const sn=$("#sn").value.trim();
     if(diffDays(todayStr(),sd)>0){toast("Tanggal servis tidak boleh di masa depan");return;}
     const commit=()=>{
+      const stale=isStale(r,sd);                       // ada servis lebih baru? → tak menggeser siklus
       r.logs.unshift({id:uid(),date:sd,odo:so,cost:sc,note:sn});
-      r.baseOdo=so;r.baseDate=sd;
+      recomputeBase(r);                                // acuan siklus = peristiwa terbaru di Riwayat
       if(typeof afterCommit==="function")afterCommit();
-      save();render();toast("Servis dicatat ✓");
+      save();render();
+      toast(stale?"Servis lama disimpan ke Riwayat (siklus berjalan tetap)":"Servis dicatat ✓");
       if(returnDetail)detailSheet(id);else closeSheet();
     };
     if(so>v.odo){
@@ -1719,7 +1806,7 @@ function detailSheet(id){
     v.reminders=v.reminders.filter(x=>x.id!==id);save();render();closeSheet();toast("Pengingat dihapus");},"Ya, hapus");
   r.logs.forEach(l=>{
     $("#sheet").querySelector(`[data-lx="${l.id}"]`).onclick=()=>confirmBox("Hapus catatan servis?",`Entri ${fmtD(l.date)} akan dihapus.`,()=>{
-      r.logs=r.logs.filter(x=>x.id!==l.id);save();render();detailSheet(id);toast("Catatan dihapus");},"Ya, hapus");
+      r.logs=r.logs.filter(x=>x.id!==l.id);recomputeBase(r);save();render();detailSheet(id);toast("Catatan dihapus");},"Ya, hapus");
     $("#sheet").querySelector(`[data-le="${l.id}"]`).onclick=()=>logEditModal(id,l.id);
   });
 }
@@ -1731,12 +1818,13 @@ function logEditModal(rid,lid){
       <div class="field"><label>Odometer (km)</label><input id="eo" inputmode="numeric" value="${l.odo}"></div></div>
     <div class="field"><label>Biaya (Rp)</label><input id="ec" inputmode="numeric" value="${l.cost||""}"></div>
     <div class="field"><label>Catatan</label><textarea id="en">${esc(l.note||"")}</textarea></div>
-    <div class="hint" style="margin-top:-6px;margin-bottom:14px">Catatan: ini hanya mengubah riwayat, tidak mengubah acuan hitung berjalan.</div>
+    <div class="hint" style="margin-top:-6px;margin-bottom:14px">Mengedit entri terbaru otomatis memperbarui acuan hitung berjalan (jatuh tempo km & tanggal).</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
   $("#c").onclick=()=>detailSheet(rid);
   $("#ok").onclick=()=>{const d=$("#ed").value||l.date;
     if(diffDays(todayStr(),d)>0){toast("Tanggal tidak boleh di masa depan");return;}
     l.date=d;l.odo=clean($("#eo").value);l.cost=clean($("#ec").value);l.note=$("#en").value.trim();
+    recomputeBase(r);
     save();render();detailSheet(rid);toast("Catatan diperbarui");};
 }
 
@@ -1759,7 +1847,7 @@ $("#menuBtn").onclick=()=>{
   $("#about").onclick=()=>{closeSheet();aboutModal();};
 };
 function doExport(){
-  const data=JSON.stringify({app:"garasi-log",version:5,exportedAt:new Date().toISOString(),state},null,2);
+  const data=JSON.stringify({app:"garasi-log",version:6,exportedAt:new Date().toISOString(),state},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
   const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
