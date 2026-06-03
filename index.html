@@ -156,6 +156,34 @@
   .field .err{font-size:12px;color:var(--red);margin-top:6px;display:none}
   .field.bad input,.field.bad select{border-color:var(--red)}
   .field.bad .err{display:block}
+  .fboard{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:11px 14px;margin:2px 0 14px}
+  .fb-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:5px 0;font-size:13.5px;color:var(--muted)}
+  .fb-row+.fb-row{border-top:1px solid var(--line)}
+  .fb-row b{color:var(--text);font-weight:700;font-variant-numeric:tabular-nums;text-align:right}
+  .fb-bud{color:var(--faint);font-weight:600;font-size:12px}
+  .fb-alert{margin-top:10px;border-radius:10px;padding:9px 11px;font-size:13px;font-weight:700;line-height:1.35}
+  .fb-alert.ok{color:var(--green);background:rgba(65,217,127,.10);border:1px solid rgba(65,217,127,.25)}
+  .fb-alert.warn{color:var(--orange);background:rgba(255,157,46,.12);border:1px solid rgba(255,157,46,.3)}
+  .fb-alert.over{color:var(--red);background:rgba(255,93,82,.14);border:1px solid rgba(255,93,82,.35)}
+  .fb-note{margin-top:10px;font-size:12px;color:var(--faint);line-height:1.4}
+  .budg{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#1d1810,#181410);padding:14px 14px 13px;margin-bottom:8px}
+  .budg-h{font-family:var(--mono);font-size:10px;letter-spacing:.18em;color:var(--faint);text-transform:uppercase;margin-bottom:10px}
+  .budg-amt{font-family:var(--mono);font-size:18px;font-weight:700;color:var(--text);margin-bottom:9px}
+  .budg-amt span{color:var(--muted);font-size:14px;font-weight:700}
+  .budg-barrow{display:flex;align-items:center;gap:10px;margin-bottom:11px}
+  .budg-track{flex:1;height:14px;border-radius:8px;background:rgba(255,255,255,.05);background-image:radial-gradient(rgba(255,255,255,.13) 1px,transparent 1px);background-size:5px 5px;overflow:hidden;border:1px solid var(--line)}
+  .budg-fill{height:100%;border-radius:8px 0 0 8px;min-width:6px;transition:width .5s ease}
+  .budg-fill.full{border-radius:8px}
+  .budg-fill.ok{background:var(--green)}
+  .budg-fill.warn{background:var(--orange)}
+  .budg-fill.over{background:var(--red)}
+  .budg-pct{font-family:var(--mono);font-size:13px;font-weight:700;color:var(--text);min-width:40px;text-align:right}
+  .budg-sisa{font-family:var(--mono);font-size:13px;color:var(--muted);margin-bottom:9px}
+  .budg-sisa.over{color:var(--red);font-weight:700}
+  .budg-proj{font-size:12.5px;color:var(--muted);line-height:1.55}
+  .budg-proj b{font-family:var(--mono);font-size:14px;color:var(--text)}
+  .budg-verdict{font-weight:700}
+  .budg-verdict.ok{color:var(--green)} .budg-verdict.bad{color:var(--red)}
   .two{display:flex;gap:10px}.two>*{flex:1}
   .row{display:flex;gap:10px;margin-top:6px}
   .btn{flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
@@ -516,6 +544,7 @@ function migrate(s){
   if(!Array.isArray(s.vehicles))s.vehicles=[];
   s.vehicles.forEach(v=>{
     v.odo=clean(v.odo);
+    v.fuelBudget=clean(v.fuelBudget); // budget bensin bulanan (Rp); 0 = belum diatur
     if(v.sortMode!=="manual")v.sortMode="auto";
     if(!v.vtype)v.vtype="motor";
     if(!v.trans)v.trans="matic";
@@ -987,6 +1016,9 @@ function renderProfilDetail(){
     </div>`;
   }
 
+  h+=`<div class="sect" style="margin-top:16px"><h2>Budget Bensin Bulan Ini</h2></div>`;
+  h+=budgetCard(v);
+
   const hasChart=monthlySpend(v).length>0;
   if(hasChart)h+=`<div class="sect" style="margin-top:16px"><h2>Biaya Bulanan</h2></div><div id="mchartwrap"></div>`;
 
@@ -1148,6 +1180,46 @@ function subBar(label,score,extra){
   const b=healthBand(score);
   return `<div class="sbar"><div class="sbk"><span>${label}${extra?` · ${extra}`:""}</span><b>${Math.round(score)}%</b></div>
     <div class="sbtrack"><i style="width:${Math.round(score)}%;background:${b.c}"></i></div></div>`;
+}
+function budgetCard(v){
+  const budget=clean(v.fuelBudget);
+  if(budget<=0){
+    return `<div class="mcard wide" style="background:transparent;border-style:dashed;margin-bottom:8px"><div class="mk">Budget Bensin</div>
+      <div class="mu" style="margin-top:6px">Belum diatur. Tetapkan budget bensin bulanan lewat <b>edit kendaraan</b> untuk memantau pengeluaran & prediksi akhir bulan.</div></div>`;
+  }
+  const ym=todayStr().slice(0,7);
+  const spent=(v.fuelLog||[]).filter(p=>p.date&&p.date.slice(0,7)===ym).reduce((s,p)=>s+(p.cost||0),0);
+  const pct=Math.round(spent/budget*100);
+  const rem=budget-spent;
+  const zone=rem<=0?"over":(pct>=75?"warn":"ok");        // hijau aman · kuning aware · merah habis/lewat
+  const fillW=Math.min(100,Math.max(spent>0?3:0,pct));
+  const td=parseD(todayStr()), dom=td.getDate(), dim=new Date(td.getFullYear(),td.getMonth()+1,0).getDate();
+  let proj=0;                                            // prediksi akhir bulan
+  if(spent>0){
+    const w=dim>0?dom/dim:1;                             // bobot laju bulan ini (tumbuh sepanjang bulan)
+    const linear=spent/Math.max(1,dom)*dim;             // ekstrapolasi laju s/d hari ini
+    const prior=monthlySpend(v).filter(d=>d.key<ym&&d.fuel>0).map(d=>d.fuel);
+    const hist=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:null; // rata-rata bulan-bulan lalu
+    proj=Math.max(spent,Math.round(hist!=null?(w*linear+(1-w)*Math.max(hist,spent)):linear));
+  }
+  let projHTML;
+  if(spent<=0)projHTML=`<div class="budg-proj">Belum ada pengeluaran bensin bulan ini.</div>`;
+  else{
+    const over=proj-budget;
+    const verdict=over>0?`<span class="budg-verdict bad">✗ Diproyeksikan lewat Rp ${nf(over)}</span>`:`<span class="budg-verdict ok">✓ Dalam budget</span>`;
+    projHTML=`<div class="budg-proj">Prediksi akhir bulan: <b>Rp ${nf(proj)}</b><br>${verdict}</div>`;
+  }
+  const sisa=rem>0?`Sisa Rp ${nf(rem)}`:rem===0?"Budget habis":`Lewat Rp ${nf(-rem)}`;
+  return `<div class="budg">
+    <div class="budg-h">Budget Bensin</div>
+    <div class="budg-amt">Rp ${nf(spent)} <span>/ Rp ${nf(budget)}</span></div>
+    <div class="budg-barrow">
+      <div class="budg-track"><div class="budg-fill ${zone}${fillW>=100?" full":""}" style="width:${fillW}%"></div></div>
+      <div class="budg-pct">${pct}%</div>
+    </div>
+    <div class="budg-sisa${rem<0?" over":""}">${sisa}</div>
+    ${projHTML}
+  </div>`;
 }
 function vehicleService(v){let count=0,cost=0,last=null;v.reminders.forEach(r=>r.logs.forEach(l=>{count++;cost+=l.cost||0;if(!last||l.date>last)last=l.date;}));return {count,cost,last};}
 /* biaya per bulan (servis vs bensin), rentang kontinu dari bulan data pertama s/d bulan ini */
@@ -1431,8 +1503,25 @@ function fuelModal(vid,opts){
       <div class="field"><label>Jenis bensin</label><select id="ffuel">${optFuel(fuelList,fuelSel)}</select></div>
     </div>
     <div class="field" id="fbrandOtherWrap" style="${brandSel===OTHER?"":"display:none"}"><label>Tulis nama SPBU / lokasi</label><input id="fbrandOther" placeholder="cth: SPBU lokal / jerigen eceran" value="${esc(brandOther)}"></div>
-    <div class="field" id="ffuelOtherWrap" style="${fuelSel===OTHER?"":"display:none"}"><label>Tulis jenis bensin</label><input id="ffuelOther" placeholder="cth: bensin eceran" value="${esc(fuelOther)}"></div>
-    <div class="hint" style="margin:-6px 0 0">Pilih SPBU dulu — daftar bensin menyesuaikan. SPBU resmi terhitung penuh di Skor Operasional; "Lainnya…" dihitung sebagai sumber tak terverifikasi.</div>`:"";
+    <div class="field" id="ffuelOtherWrap" style="${fuelSel===OTHER?"":"display:none"}"><label>Tulis jenis bensin</label><input id="ffuelOther" placeholder="cth: bensin eceran" value="${esc(fuelOther)}"></div>`:"";
+  // papan informasi (gantikan tutorial): konteks ringkas untuk bantu keputusan + sinergi budget
+  const fStat=vehicleFuel(v), kmpl=fStat.kmPerL;
+  const ymNow=todayStr().slice(0,7);
+  const spentMonth=(v.fuelLog||[]).filter(p=>p.date&&p.date.slice(0,7)===ymNow).reduce((s,p)=>s+(p.cost||0),0);
+  const budget=clean(v.fuelBudget);
+  let budgetLine;
+  if(budget>0){
+    const rem=budget-spentMonth;
+    if(rem<0)budgetLine=`<div class="fb-alert over">Budget bensin bulan ini terlewati Rp ${nf(-rem)}</div>`;
+    else if(rem<100000)budgetLine=`<div class="fb-alert warn">Sisa budget bensin menipis — Rp ${nf(rem)} lagi</div>`;
+    else budgetLine=`<div class="fb-alert ok">Sisa budget bensin: Rp ${nf(rem)}</div>`;
+  }else budgetLine=`<div class="fb-note">Atur budget bensin bulanan di profil kendaraan untuk pantau sisa otomatis.</div>`;
+  const board=`<div class="fboard">
+      <div class="fb-row"><span>Odometer terakhir</span><b>${nf(v.odo)} km</b></div>
+      <div class="fb-row"><span>Rata-rata konsumsi</span><b>${kmpl!=null?kmpl.toFixed(1).replace(".",",")+" km/l":"—"}</b></div>
+      <div class="fb-row"><span>Pengeluaran bensin bulan ini</span><b>Rp ${nf(spentMonth)}${budget>0?` <span class="fb-bud">/ ${nf(budget)}</span>`:""}</b></div>
+      ${budgetLine}
+    </div>`;
   openSheet(`<h3>⛽ ${isEdit?"Edit Catatan Bensin":"Catat Isi Bensin"} · ${esc(v.name)}</h3>
     <div class="two">
       <div class="field"><label>Tanggal</label><input id="fd" type="date" value="${dDate}"></div>
@@ -1443,7 +1532,7 @@ function fuelModal(vid,opts){
       <div class="field"><label>Biaya (Rp)</label><input id="fc" inputmode="numeric" placeholder="cth: 50000" value="${dC}"></div>
     </div>
     ${detail}
-    <div class="hint" style="margin:-6px 0 14px">Odometer ikut menghitung rata-rata jarak & biaya per km. Isi liter bila ingin tahu konsumsi km/liter.</div>
+    ${board}
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const fo=$("#fo");if(!isEdit){fo.focus();fo.select();}
   if(full){
@@ -1632,6 +1721,7 @@ function vehicleModal(editId){
       <div class="field"><label>Transmisi</label><select id="vtr"><option value="matic" ${sel("matic",vtr)}>Matic</option><option value="manual" ${sel("manual",vtr)}>Manual</option></select></div>
     </div>
     ${isEdit?"":`<div class="field"><label>Odometer saat ini (km)</label><input id="vo" inputmode="numeric" placeholder="cth: 12500"></div>`}
+    <div class="field"><label>Budget bensin / bulan (Rp, opsional)</label><input id="vb" inputmode="numeric" placeholder="cth: 300000" value="${isEdit&&ev.fuelBudget>0?ev.fuelBudget:""}"></div>
     <div class="hint" style="margin:-4px 0 14px">Kamus prioritas servis menyesuaikan jenis & transmisi. Saat ini kamus terlengkap untuk <b>Motor Matic</b>; tipe lain memakai versi default sementara.</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const vn=$("#vn");if(!isEdit)vn.focus();$("#c").onclick=closeSheet;
@@ -1641,14 +1731,14 @@ function vehicleModal(editId){
     if(isEdit){
       const lost=ev.reminders.filter(r=>r.category&&!dictFor({vtype:nt,trans:ntr}).some(c=>c.name===r.category)).length;
       const apply=()=>{
-        ev.name=name;ev.vtype=nt;ev.trans=ntr;
+        ev.name=name;ev.vtype=nt;ev.trans=ntr;ev.fuelBudget=clean($("#vb").value);
         ev.reminders.forEach(r=>{if(r.category&&!dictFor(ev).some(c=>c.name===r.category))r.category=null;});
         save();render();closeSheet();toast("Kendaraan diperbarui");
       };
       if(lost>0)confirmBox("Ubah jenis kendaraan?",`Kamus prioritas ikut berganti. ${lost} kategori yang sudah diatur tidak ada di kamus baru dan akan dikosongkan — reminder & riwayat tetap aman, prioritas dihitung ulang otomatis dari nama servis.`,apply,"Ya, ubah");
       else apply();
     }else{
-      const v={id:uid(),name,vtype:nt,trans:ntr,odo:clean($("#vo").value),sortMode:"auto",reminders:[]};
+      const v={id:uid(),name,vtype:nt,trans:ntr,odo:clean($("#vo").value),fuelBudget:clean($("#vb").value),sortMode:"auto",reminders:[]};
       state.vehicles.push(v);state.selected=v.id;save();render();closeSheet();toast("Kendaraan ditambahkan");
     }
   };
@@ -1847,7 +1937,7 @@ $("#menuBtn").onclick=()=>{
   $("#about").onclick=()=>{closeSheet();aboutModal();};
 };
 function doExport(){
-  const data=JSON.stringify({app:"garasi-log",version:6,exportedAt:new Date().toISOString(),state},null,2);
+  const data=JSON.stringify({app:"garasi-log",version:7,exportedAt:new Date().toISOString(),state},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
   const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
