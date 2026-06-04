@@ -184,6 +184,13 @@
   .budg-proj b{font-family:var(--mono);font-size:14px;color:var(--text)}
   .budg-verdict{font-weight:700}
   .budg-verdict.ok{color:var(--green)} .budg-verdict.bad{color:var(--red)}
+  .trend{border:1px solid var(--line);border-radius:14px;background:linear-gradient(180deg,#1d1810,#181410);padding:13px 14px;margin-bottom:8px}
+  .trend-spark{width:100%;height:46px;display:block;margin:0 0 10px}
+  .trend-foot{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+  .trend-pct{font-family:var(--mono);font-size:20px;font-weight:700;line-height:1}
+  .trend-pct.up{color:var(--green)} .trend-pct.down{color:var(--red)} .trend-pct.flat{color:var(--muted)}
+  .trend-msg{font-size:12.5px;color:var(--muted);line-height:1.4;flex:1;min-width:150px}
+  .trend-now{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:9px}
   .two{display:flex;gap:10px}.two>*{flex:1}
   .row{display:flex;gap:10px;margin-top:6px}
   .btn{flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
@@ -1019,6 +1026,9 @@ function renderProfilDetail(){
   h+=`<div class="sect" style="margin-top:16px"><h2>Budget Bensin Bulan Ini</h2></div>`;
   h+=budgetCard(v);
 
+  h+=`<div class="sect" style="margin-top:16px"><h2>Tren Efisiensi BBM</h2></div>`;
+  h+=trendCard(v);
+
   const hasChart=monthlySpend(v).length>0;
   if(hasChart)h+=`<div class="sect" style="margin-top:16px"><h2>Biaya Bulanan</h2></div><div id="mchartwrap"></div>`;
 
@@ -1219,6 +1229,56 @@ function budgetCard(v){
     </div>
     <div class="budg-sisa${rem<0?" over":""}">${sisa}</div>
     ${projHTML}
+  </div>`;
+}
+function consumptionTrend(v){
+  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
+  const kml=[],rpkm=[];
+  for(let i=1;i<f.length;i++){
+    const dist=(f[i].odo||0)-(f[i-1].odo||0);
+    if(dist<=0)continue;                                   // segmen mundur/0 diabaikan (tank-to-tank)
+    if((f[i].liters||0)>0)kml.push(dist/f[i].liters);      // km/l per pengisian
+    if((f[i].cost||0)>0)rpkm.push(f[i].cost/dist);         // Rp/km per pengisian
+  }
+  let mode=null,series=null;
+  if(kml.length>=3){mode="kml";series=kml;}                // utamakan konsumsi (km/l)
+  else if(rpkm.length>=3){mode="rpkm";series=rpkm;}        // fallback biaya/km (utk yg tak isi liter)
+  if(!mode)return null;
+  series=series.slice(-16);                                // fokus ke ~16 pengisian terakhir
+  const w=3, ma=series.map((_,j)=>{const s=series.slice(Math.max(0,j-w+1),j+1);return s.reduce((a,b)=>a+b,0)/s.length;}); // moving average trailing
+  const half=Math.max(1,Math.floor(series.length/2)), mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
+  const mo=mean(series.slice(0,half)), mr=mean(series.slice(-half));
+  const pct=mo>0?Math.round((mr-mo)/mo*100):0;             // paruh akhir vs paruh awal
+  const improving=mode==="kml"?pct>0:pct<0;                // km/l naik=baik · Rp/km turun=baik
+  const dir=Math.abs(pct)<2?"flat":(improving?"up":"down");
+  return {mode,ma,pct,dir,improving,last:series[series.length-1],n:series.length};
+}
+function sparklineSVG(ma,dir){
+  const W=240,H=44,pad=4,n=ma.length;
+  const min=Math.min(...ma),max=Math.max(...ma),flat=max===min,rng=max-min;
+  const y=val=>flat?H/2:H-pad-((val-min)/rng)*(H-2*pad);
+  const x=i=>n>1?pad+i/(n-1)*(W-2*pad):W/2;
+  const pts=ma.map((val,i)=>`${x(i).toFixed(1)},${y(val).toFixed(1)}`);
+  const col=dir==="up"?"var(--green)":dir==="down"?"var(--red)":"var(--amber-dim)";
+  const area=`${x(0).toFixed(1)},${H-pad} ${pts.join(" ")} ${x(n-1).toFixed(1)},${H-pad}`;
+  return `<svg class="trend-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="grafik tren efisiensi">
+    <polygon points="${area}" fill="${col}" opacity="0.12"/>
+    <polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+function trendCard(v){
+  const t=consumptionTrend(v);
+  if(!t)return `<div class="mcard wide" style="background:transparent;border-style:dashed;margin-bottom:8px"><div class="mk">Tren Efisiensi BBM</div>
+      <div class="mu" style="margin-top:6px">Belum cukup data. Catat beberapa pengisian bensin dengan <b>odometer</b> (sertakan <b>liter</b> bila ada) agar arah efisiensi terbaca.</div></div>`;
+  const isKml=t.mode==="kml";
+  const nowVal=isKml?`${t.last.toFixed(1).replace(".",",")} km/l`:`Rp ${nf(Math.round(t.last))}/km`;
+  let pctText,msg;
+  if(t.dir==="flat"){pctText=`±${Math.abs(t.pct)}%`;msg=isKml?"Konsumsi relatif stabil":"Biaya BBM/km relatif stabil";}
+  else{pctText=`${t.pct>0?"+":""}${t.pct}%`;msg=isKml?(t.improving?"Lebih hemat dari periode sebelumnya":"Lebih boros dari periode sebelumnya"):(t.improving?"Biaya BBM/km menurun (lebih hemat)":"Biaya BBM/km naik (lebih boros)");}
+  return `<div class="trend">
+    ${sparklineSVG(t.ma,t.dir)}
+    <div class="trend-foot"><span class="trend-pct ${t.dir}">${pctText}</span><span class="trend-msg">${msg}</span></div>
+    <div class="trend-now">Terkini: ${nowVal} · dari ${t.n} segmen pengisian</div>
   </div>`;
 }
 function vehicleService(v){let count=0,cost=0,last=null;v.reminders.forEach(r=>r.logs.forEach(l=>{count++;cost+=l.cost||0;if(!last||l.date>last)last=l.date;}));return {count,cost,last};}
