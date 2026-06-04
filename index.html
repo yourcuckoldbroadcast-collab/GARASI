@@ -1433,15 +1433,19 @@ function newWorkOrderModal(){
 function odoCheckinModal(vid){
   state.selected=vid;const v=vehicle();if(!v)return;
   openSheet(`<h3>📍 Catat Odometer · ${esc(v.name)}</h3>
-    <div class="field"><label>Odometer terkini (km)</label><input id="ci" inputmode="numeric" value="${v.odo}">
-      <div class="hint">Catatan berkala ini dipakai untuk menghitung rata-rata jarak bulanan & harian. Idealnya diisi tiap akhir bulan.</div></div>
+    <div class="field" id="fci"><label>Odometer terkini (km)</label><input id="ci" inputmode="numeric" value="${v.odo}">
+      <div class="hint">Catatan berkala ini dipakai untuk menghitung rata-rata jarak bulanan & harian. Idealnya diisi tiap akhir bulan.</div><div class="err"></div></div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">Simpan</button></div>`);
   const ci=$("#ci");ci.focus();ci.select();$("#c").onclick=closeSheet;
-  $("#ok").onclick=()=>{const val=clean(ci.value);
-    const commit=()=>{const t=todayStr();v.odoLog=(v.odoLog||[]).filter(p=>p.date!==t);v.odoLog.push({date:t,odo:val});
-      if(val>v.odo)v.odo=val;save();render();closeSheet();toast("Odometer dicatat ✓");};
-    if(val<v.odo){confirmBox("Odometer lebih kecil?",`Angka (${nf(val)}) di bawah odometer tersimpan (${nf(v.odo)}). Tetap catat?`,commit);return;}
-    commit();};
+  $("#ok").onclick=()=>{const val=clean(ci.value);const fci=$("#fci");
+    if(val<v.odo){
+      fci.classList.add("bad");
+      fci.querySelector(".err").textContent=`Tidak boleh di bawah catatan terakhir (${nf(v.odo)} km). Odometer tak mungkin mundur — catat angka terbaru saja. Bila angka tersimpan keliru, perbaiki lewat "Update Odometer".`;
+      ci.focus();ci.select();return;
+    }
+    fci.classList.remove("bad");
+    const t=todayStr();v.odoLog=(v.odoLog||[]).filter(p=>p.date!==t);v.odoLog.push({date:t,odo:val});
+    if(val>v.odo)v.odo=val;save();render();closeSheet();toast("Odometer dicatat ✓");};
 }
 
 /* ---------- catat isi bensin ---------- */
@@ -1519,7 +1523,7 @@ function fuelModal(vid,opts){
   const board=`<div class="fboard">
       <div class="fb-row"><span>Odometer terakhir</span><b>${nf(v.odo)} km</b></div>
       <div class="fb-row"><span>Rata-rata konsumsi</span><b>${kmpl!=null?kmpl.toFixed(1).replace(".",",")+" km/l":"—"}</b></div>
-      <div class="fb-row"><span>Pengeluaran bensin bulan ini</span><b>Rp ${nf(spentMonth)}${budget>0?` <span class="fb-bud">/ ${nf(budget)}</span>`:""}</b></div>
+      <div class="fb-row"><span>Pengeluaran bensin bulan ini</span><b>Rp ${nf(spentMonth)}</b></div>
       ${budgetLine}
     </div>`;
   openSheet(`<h3>⛽ ${isEdit?"Edit Catatan Bensin":"Catat Isi Bensin"} · ${esc(v.name)}</h3>
