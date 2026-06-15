@@ -79,7 +79,7 @@
     cursor:pointer;display:flex;align-items:center;gap:6px;text-transform:uppercase}
   .odo .editbtn:active{transform:scale(.95)}
 
-  .sect{display:flex;align-items:center;justify-content:space-between;margin:6px 2px 12px;gap:10px}
+  .sect{display:flex;align-items:center;justify-content:space-between;margin:16px 2px 12px;gap:10px}
   .sect h2{font-family:var(--mono);font-size:11px;letter-spacing:.28em;color:var(--muted);text-transform:uppercase;margin:0;font-weight:600}
   .seg{display:flex;border:1px solid var(--line2);border-radius:9px;overflow:hidden;background:var(--panel)}
   .seg button{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
@@ -347,6 +347,9 @@
   .led .ln{font-size:14.5px;font-weight:700;color:var(--text)}
   .led .lo{font-family:var(--mono);font-size:12px;color:var(--amber-dim);white-space:nowrap}
   .led .lv{font-family:var(--mono);font-size:11px;color:var(--faint);margin-top:5px;letter-spacing:.03em}
+  .led .lv.lvflex{display:flex;flex-wrap:wrap;align-items:baseline;row-gap:3px}
+  .led .lvflex .lvb{white-space:nowrap}
+  .led .lvflex .lvb:not(:last-child)::after{content:"·";color:var(--faint);opacity:.7;margin:0 7px}
   .led .lc{font-family:var(--mono);font-size:11.5px;color:var(--green);margin-top:5px}
   .led .lnote{font-size:12.5px;color:var(--muted);margin-top:6px;line-height:1.45;white-space:pre-wrap}
 
@@ -1014,7 +1017,7 @@ function renderProfilDetail(){
       :(d.trips.length?` · pola harian, di luar ${d.trips.length} perjalanan jauh`:"");
     h+=`<div class="mu" style="margin:-2px 2px 8px;font-family:var(--mono);font-size:10.5px;color:var(--faint);letter-spacing:.02em">${basis}${note}</div>`;
     if(d.trips.length){
-      h+=`<div class="sect" style="margin-top:8px"><h2>Perjalanan Jauh Terdeteksi</h2></div>`;
+      h+=`<div class="sect"><h2>Perjalanan Jauh Terdeteksi</h2></div>`;
       d.trips.slice().reverse().forEach(t=>{
         const tf=tripFuel(v,t);
         const bits=[`${nf(t.km)} km / ${t.days} hari`];
@@ -1022,7 +1025,7 @@ function renderProfilDetail(){
         if(tf.kmPerL!=null)bits.push(`${tf.kmPerL.toFixed(1)} km/L`);
         h+=`<div class="led" style="cursor:default">
           <div class="lh"><span class="ln">${fmtD(t.from.date)} – ${fmtD(t.to.date)}</span><span class="lo">±${nf(Math.round(t.rate))} km/hari</span></div>
-          <div class="lv">${bits.join(" · ")}</div></div>`;
+          <div class="lv lvflex">${bits.map(b=>`<span class="lvb">${b}</span>`).join("")}</div></div>`;
       });
       h+=`<div class="mu" style="margin:2px 2px 4px;font-family:var(--mono);font-size:10.5px;color:var(--faint)">termasuk perjalanan: ±${nf(Math.round(d.perMonthAll))} km/bln</div>`;
     }
