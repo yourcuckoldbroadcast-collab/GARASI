@@ -209,6 +209,31 @@
   .trend-shield .ts-btn{background:rgba(255,196,84,.12);border:1px solid var(--line2);color:var(--amber);font-weight:600;font-size:13px;padding:10px 22px;border-radius:11px;cursor:pointer;transition:transform .1s}
   .trend-shield .ts-btn:active{transform:scale(.97)}
   .trend-badge{display:inline-block;font-family:var(--mono);font-size:10px;letter-spacing:.04em;color:var(--orange);background:rgba(255,157,46,.12);border:1px solid rgba(255,157,46,.28);padding:3px 10px;border-radius:20px;margin-bottom:11px}
+  .dq-warn{background:rgba(255,157,46,.08);border:1px solid rgba(255,157,46,.24);border-radius:12px;padding:11px 13px 10px;margin-bottom:10px}
+  .dq-warn .dq-h{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .dq-warn ul{margin:0;padding:0;list-style:none}
+  .dq-warn li{font-size:11.5px;color:var(--muted);line-height:1.5;padding-left:13px;position:relative}
+  .dq-warn li::before{content:"›";position:absolute;left:2px;color:var(--orange)}
+  .dq-warn li.more{color:var(--faint)}
+  .dq-warn li.more::before{content:""}
+  .perk{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);background:rgba(255,255,255,.05);padding:2px 7px;border-radius:10px;margin-left:7px;font-weight:400}
+  .gauge{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:15px 16px;margin-bottom:8px}
+  .gauge .g-top{display:flex;align-items:baseline;gap:8px;margin-bottom:10px}
+  .gauge .g-main{font-family:var(--mono);font-size:26px;font-weight:700;color:var(--text);line-height:1}
+  .gauge .g-main small{font-size:13px;color:var(--muted);margin-left:2px;font-weight:600}
+  .gauge .g-cap{font-family:var(--mono);font-size:12.5px;color:var(--faint)}
+  .gauge .g-bar{height:9px;border-radius:6px;background:rgba(255,255,255,.06);overflow:hidden;border:1px solid var(--line);margin-bottom:6px}
+  .gauge .g-bar i{display:block;height:100%;border-radius:6px;transition:width .5s}
+  .gauge .g-bar i.green{background:var(--green)}
+  .gauge .g-bar i.amber{background:var(--amber)}
+  .gauge .g-bar i.red{background:var(--red)}
+  .gauge .g-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--muted);padding:7px 0 0}
+  .gauge .g-row b{font-family:var(--mono);color:var(--text);font-weight:600}
+  .gauge .g-measured{font-size:9px;color:var(--green);background:rgba(120,200,130,.13);padding:2px 6px;border-radius:8px;margin-left:4px;letter-spacing:.04em;text-transform:uppercase}
+  .gauge .g-est{font-size:9px;color:var(--faint);background:rgba(255,255,255,.05);padding:2px 6px;border-radius:8px;margin-left:4px;letter-spacing:.04em;text-transform:uppercase}
+  .gauge .g-warn{margin-top:11px;font-size:12px;color:var(--red);background:rgba(255,93,82,.08);border:1px solid rgba(255,93,82,.2);border-radius:9px;padding:9px 11px}
+  .gauge .g-note{margin-top:10px;font-size:10.5px;color:var(--faint);line-height:1.45}
+  .ftag.full{color:var(--green);border-color:rgba(120,200,130,.3);background:rgba(120,200,130,.1)}
   .two{display:flex;gap:10px}.two>*{flex:1}
   .row{display:flex;gap:10px;margin-top:6px}
   .btn{flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
@@ -570,6 +595,7 @@ function migrate(s){
   s.vehicles.forEach(v=>{
     v.odo=clean(v.odo);
     v.fuelBudget=clean(v.fuelBudget); // budget bensin bulanan (Rp); 0 = belum diatur
+    v.tankCapacity=(typeof v.tankCapacity==="number"&&v.tankCapacity>0)?v.tankCapacity:(parseFloat(v.tankCapacity)>0?parseFloat(v.tankCapacity):0); // kapasitas tangki (L); 0 = belum diatur
     if(v.sortMode!=="manual")v.sortMode="auto";
     if(!v.vtype)v.vtype="motor";
     if(!v.trans)v.trans="matic";
@@ -616,7 +642,8 @@ function migrate(s){
         liters:(typeof p.liters==="number"&&p.liters>0)?p.liters:(parseFloat(p.liters)>0?parseFloat(p.liters):0),
         cost:clean(p.cost),
         fuel:typeof p.fuel==="string"?p.fuel:"",
-        place:typeof p.place==="string"?p.place:""}))
+        place:typeof p.place==="string"?p.place:"",
+        fillType:p.fillType==="full"?"full":"partial"}))
       .filter(p=>p.cost>0||p.liters>0||p.odo>0);
   });
   if(!s.selected||!s.vehicles.some(v=>v.id===s.selected))
@@ -1044,6 +1071,8 @@ function renderProfilDetail(){
   h+=`<div class="sect" style="margin-top:16px"><h2>Budget Bensin Bulan Ini</h2></div>`;
   h+=budgetCard(v);
 
+  h+=fuelGaugeSection(v);
+
   h+=`<div class="sect" style="margin-top:16px"><h2>Tren Efisiensi BBM</h2></div>`;
   h+=trendCard(v);
 
@@ -1253,6 +1282,57 @@ function budgetCard(v){
     ${projHTML}
   </div>`;
 }
+/* ---- Fase 2: Full-to-Full + Fuel Balance Model (semua DERIVED dari riwayat) ---- */
+function fullToFull(v){
+  // efisiensi AKURAT di antara dua pengisian "full" — kebal terhadap noise isi parsial
+  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
+  const idx=[]; f.forEach((e,i)=>{if(e.fillType==="full"&&(e.odo||0)>0)idx.push(i);});
+  const out=[];
+  for(let k=1;k<idx.length;k++){
+    const A=idx[k-1], B=idx[k], dist=(f[B].odo||0)-(f[A].odo||0);
+    let lit=0; for(let j=A+1;j<=B;j++)lit+=(f[j].liters||0);   // SEMUA pengisian setelah A s/d B (liter F_a tak dihitung)
+    if(dist>0&&lit>0)out.push({eff:dist/lit,d:dist,l:lit,to:f[B].date,toOdo:f[B].odo});
+  }
+  return out;
+}
+function bestEfficiency(v){
+  const ff=fullToFull(v);
+  if(ff.length)return {kmpl:ff.reduce((a,m)=>a+m.eff,0)/ff.length, measured:true};  // terukur
+  const vf=vehicleFuel(v);
+  if(vf&&vf.kmPerL>0)return {kmpl:vf.kmPerL, measured:false};                       // perkiraan
+  return null;
+}
+function fuelBalance(v){
+  const cap=parseFloat(v.tankCapacity)||0;
+  if(cap<=0)return null;                                  // belum ada kapasitas tangki
+  const eff=bestEfficiency(v); if(!eff||eff.kmpl<=0)return null;
+  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
+  let anchor=-1; for(let i=f.length-1;i>=0;i--){if(f[i].fillType==="full"&&(f[i].odo||0)>0){anchor=i;break;}}
+  if(anchor<0)return null;                                // belum pernah isi penuh → sisa tak bisa dipastikan
+  let fuel=cap, last=f[anchor].odo||0;                    // resync: di full tank, tangki = kapasitas
+  for(let i=anchor+1;i<f.length;i++){
+    const o=f[i].odo||0;
+    if(o>last){fuel=Math.max(0,fuel-(o-last)/eff.kmpl);last=o;}  // jarak dikonsumsi dulu
+    fuel=Math.min(cap,fuel+(f[i].liters||0));                    // lalu tambah liter
+  }
+  if((v.odo||0)>last)fuel=Math.max(0,fuel-((v.odo||0)-last)/eff.kmpl); // jarak sejak catatan terakhir → kini
+  return {fuel,range:fuel*eff.kmpl,cap,kmpl:eff.kmpl,measured:eff.measured,pct:fuel/cap};
+}
+function fuelGaugeSection(v){
+  const b=fuelBalance(v); if(!b)return "";
+  const pct=Math.max(0,Math.min(100,Math.round(b.pct*100)));
+  const zone=b.pct<0.15?"red":b.pct<0.3?"amber":"green", low=b.pct<0.2;
+  const L=x=>(Math.round(x*10)/10+"").replace(".",",");
+  return `<div class="sect" style="margin-top:16px"><h2>Sisa BBM <span class="perk">perkiraan</span></h2></div>
+    <div class="gauge">
+      <div class="g-top"><div class="g-main">${L(b.fuel)}<small>L</small></div><div class="g-cap">dari ${L(b.cap)} L</div></div>
+      <div class="g-bar"><i class="${zone}" style="width:${pct}%"></i></div>
+      <div class="g-row"><span>Sisa jarak</span><b>± ${nf(Math.round(b.range))} km</b></div>
+      <div class="g-row"><span>Konsumsi dipakai</span><b>${L(b.kmpl)} km/l ${b.measured?`<span class="g-measured">terukur</span>`:`<span class="g-est">perkiraan</span>`}</b></div>
+      ${low?`<div class="g-warn">⚠ BBM menipis — siapkan pengisian berikutnya.</div>`:""}
+      <div class="g-note">Dihitung sejak pengisian penuh terakhir; akurasi meningkat tiap kali kamu isi penuh.</div>
+    </div>`;
+}
 function consumptionTrend(v){
   const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
   const segK=[],segR=[];
@@ -1284,7 +1364,9 @@ function consumptionTrend(v){
     return Math.sqrt(a.reduce((x,y)=>x+(y-m)*(y-m),0)/a.length)/m;};
   const effs=seg.map(s=>mode==="kml"?s.d/s.l:s.c/s.d);
   const cvEff=cvOf(effs), cvFill=mode==="kml"?cvOf(seg.map(s=>s.l)):0;
-  return {mode,ma,pct,dir,improving,last:recent,n,K,cvEff,cvFill,fills:f.length};
+  const f2fArr=fullToFull(v);
+  const measured=f2fArr.length>0, f2fEff=measured?f2fArr.reduce((a,m)=>a+m.eff,0)/f2fArr.length:0;
+  return {mode,ma,pct,dir,improving,last:recent,n,K,cvEff,cvFill,fills:f.length,measured,f2fEff,f2fCount:f2fArr.length};
 }
 function sparklineSVG(ma,dir){
   const W=240,H=44,pad=4,n=ma.length;
@@ -1299,16 +1381,45 @@ function sparklineSVG(ma,dir){
     <polyline points="${pts.join(" ")}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
 }
+/* ---- Fase 1: DUA SKOR TERPISAH ----
+   Data Quality        = validitas input (typo / odometer mundur / nilai mustahil)
+   Consumption Confidence = kepercayaan analitik (jumlah data × kestabilan EFISIENSI)
+   Variasi ukuran pengisian (isi parsial) = NORMAL → tidak lagi menilai apa pun di sini. */
+function fuelDataQuality(v){
+  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
+  const isMotor=(v.vtype||"motor")==="motor";
+  const effMin=isMotor?10:2, effMax=isMotor?130:45, litMax=isMotor?15:120; // batas longgar: hanya yg jelas mustahil
+  const out=[];
+  for(let i=0;i<f.length;i++){
+    const e=f[i], L=e.liters||0;
+    if(L>litMax)out.push(`Liter ${(L+"").replace(".",",")} L pada ${fmtD(e.date)} melebihi wajar — cek angka.`);
+    if(i>0){
+      const dist=(e.odo||0)-(f[i-1].odo||0);
+      if(dist<0)out.push(`Odometer ${fmtD(e.date)} (${nf(e.odo)}) lebih kecil dari pengisian sebelumnya — cek odometer.`);
+      else if(dist>0&&L>0){const eff=dist/L;
+        if(eff<effMin||eff>effMax)out.push(`Efisiensi ${eff.toFixed(0)} km/l pada ${fmtD(e.date)} di luar batas wajar — cek odometer/liter.`);}
+    }
+  }
+  return out;
+}
+function dqWarnHTML(dq){
+  if(!dq.length)return "";
+  const show=dq.slice(0,3), more=dq.length-show.length;
+  return `<div class="dq-warn"><div class="dq-h"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg> Periksa kualitas data</div><ul>`+
+    show.map(s=>`<li>${s}</li>`).join("")+(more>0?`<li class="more">+${more} catatan lain</li>`:"")+`</ul></div>`;
+}
+
 const trendSeen={};   // ingat persetujuan "Tetap tampilkan" per kendaraan (selama sesi)
 function trendCard(v){
+  const dq=dqWarnHTML(fuelDataQuality(v));                  // Data Quality: tampil di atas, lepas dari shield
   const t=consumptionTrend(v);
-  if(!t)return `<div class="mcard wide" style="background:transparent;border-style:dashed;margin-bottom:8px"><div class="mk">Tren Efisiensi BBM</div>
+  if(!t)return dq+`<div class="mcard wide" style="background:transparent;border-style:dashed;margin-bottom:8px"><div class="mk">Tren Efisiensi BBM</div>
       <div class="mu" style="margin-top:6px">Belum cukup data. Catat beberapa pengisian bensin dengan <b>odometer</b> (sertakan <b>liter</b> bila ada) agar arah efisiensi terbaca.</div></div>`;
 
   const young=t.fills<15;
   // SHIELD HYBRID: <15 pengisian & belum disetujui → chart disembunyikan, tampilkan tombol
   if(young&&!trendSeen[v.id]){
-    return `<div class="trend-shield">
+    return dq+`<div class="trend-shield">
       <div class="ts-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19V5M4 19h16"/><path d="M7.5 15.5l3.5-4 3 2 4.5-6.5"/></svg></div>
       <div class="ts-tt">Tren Belum Stabil</div>
       <div class="ts-sub">Riwayat pengisian baru <b>${t.fills}</b> dari 15. Tren ditampilkan otomatis setelah data cukup matang.</div>
@@ -1321,22 +1432,22 @@ function trendCard(v){
   let msg;
   if(t.dir==="flat")msg=isKml?"Konsumsi relatif stabil":"Biaya BBM/km relatif stabil";
   else msg=isKml?(t.improving?"Lebih hemat dari periode sebelumnya":"Lebih boros dari periode sebelumnya"):(t.improving?"Biaya BBM/km menurun (lebih hemat)":"Biaya BBM/km naik (lebih boros)");
-  // Kepercayaan = Base (jumlah pengisian, DOMINAN) × Integrity (konsistensi, koreksi RINGAN)
+  // CONSUMPTION CONFIDENCE = Base (jumlah pengisian, DOMINAN) × Stabilitas efisiensi (koreksi RINGAN).
+  // cvFill (variasi ukuran pengisian) TIDAK lagi memotong skor — itu normal pada isi parsial.
   const base=Math.min(t.fills/15,1);
-  const cv=Math.max(t.cvEff,t.cvFill);                      // noise dominan (max, agar tak menghukum ganda)
-  let integrity=1;
-  if(t.n>=5)integrity=Math.max(0.7,Math.min(1,1-(cv-0.15)/0.35*0.3)); // lantai 70% → maks koreksi 30%
-  const fp=Math.round(base*integrity*100);
+  let stability=1;
+  if(t.n>=5)stability=Math.max(0.7,Math.min(1,1-(t.cvEff-0.15)/0.35*0.3)); // hanya CV efisiensi
+  let fp=Math.round(base*stability*100);
+  if(t.measured)fp=Math.min(100,fp+10);                    // boost: ada pengukuran full-to-full (terukur)
   const tier=fp>=70?"Tinggi":fp>=35?"Sedang":"Rendah";
-  // Catatan: bedakan SEBAB — ukuran pengisian, variasi efisiensi, atau data masih awal
-  const fillNoisy=isKml&&t.cvFill>0.30, effVaried=t.cvEff>0.30;
+  const effVaried=t.cvEff>0.30;
   let note;
-  if(!young&&!fillNoisy&&!effVaried)note="Tren didukung riwayat pengisian yang memadai dan konsisten.";
-  else if(fillNoisy)note="Ukuran pengisian masih bervariasi (isi parsial), jadi km/l terukur berisik dan arah tren dapat berubah.";
-  else if(effVaried)note="Efisiensi antar-pengisian masih cukup bervariasi sehingga arah tren dapat berubah.";
-  else note="Riwayat masih awal (di bawah 15 pengisian) sehingga arah tren dapat berubah seiring bertambahnya data.";
+  if(effVaried)note="Efisiensi antar-pengisian masih cukup bervariasi sehingga arah tren dapat berubah.";
+  else if(t.measured)note="Tren didukung pengisian penuh — efisiensi terukur, bukan sekadar perkiraan.";
+  else if(young)note="Riwayat masih awal (di bawah 15 pengisian) sehingga arah tren dapat berubah seiring bertambahnya data.";
+  else note="Tren didukung riwayat pengisian yang memadai dan konsisten.";
   const arrow=t.dir==="up"?"↑":t.dir==="down"?"↓":"→";
-  return `<div class="trend">
+  return dq+`<div class="trend">
     ${young?`<div class="trend-badge">⚠ Data Awal</div>`:""}
     ${sparklineSVG(t.ma,t.dir)}
     <div class="trend-lbl">Indikasi tren</div>
@@ -1620,6 +1731,7 @@ function fuelModal(vid,opts){
   const isEdit=!!rec, full=!!opts.full, onDone=opts.onDone;
   const dDate=isEdit?rec.date:todayStr(), dOdo=isEdit?rec.odo:v.odo;
   const dL=isEdit&&rec.liters?rec.liters:"", dC=isEdit&&rec.cost?rec.cost:"";
+  const dFill=isEdit?(rec.fillType==="full"?"full":"partial"):"partial";
   const dFuel=isEdit?(rec.fuel||""):"", dPlace=isEdit?(rec.place||""):"";
   // SPBU (lokasi): cocokkan ke kamus → bila tak ada, tampil "Lainnya…" + kolom teks (data lama tetap aman)
   const knownBrand=SPBU_DICT.some(b=>b.brand===dPlace);
@@ -1663,6 +1775,8 @@ function fuelModal(vid,opts){
       <div class="field"><label>Liter (opsional)</label><input id="fl" inputmode="decimal" placeholder="cth: 4.2" value="${dL}"></div>
       <div class="field"><label>Biaya (Rp)</label><input id="fc" inputmode="numeric" placeholder="cth: 50000" value="${dC}"></div>
     </div>
+    <div class="field"><label>Jenis pengisian</label><select id="ftype"><option value="partial" ${dFill==="partial"?"selected":""}>Parsial — tidak sampai penuh</option><option value="full" ${dFill==="full"?"selected":""}>Penuh — diisi sampai penuh</option></select>
+      <div class="hint" style="margin-top:6px">Pilih <b>Penuh</b> hanya bila tangki diisi sampai penuh (nozzle berhenti). Ini menambah akurasi analisis & estimasi sisa BBM.</div></div>
     ${detail}
     ${board}
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
@@ -1686,13 +1800,14 @@ function fuelModal(vid,opts){
   $("#ok").onclick=()=>{
     const fd=$("#fd").value||todayStr();const fov=clean(fo.value);
     const fl=Math.max(0,parseFloat(String($("#fl").value).replace(",","."))||0);const fc=clean($("#fc").value);
+    const ftype=($("#ftype")&&$("#ftype").value==="full")?"full":"partial";
     if(diffDays(todayStr(),fd)>0){toast("Tanggal tidak boleh di masa depan");return;}
     if(fc<=0&&fl<=0){toast("Isi minimal biaya atau liter");return;}
     const resolve=(selId,otherId)=>{const el=$(selId);if(!el)return "";const sv=el.value;if(sv===OTHER){return ($(otherId).value||"").trim();}return sv;};
     const apply=()=>{
       if(!Array.isArray(v.fuelLog))v.fuelLog=[];
-      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fbrand","#fbrandOther");}}
-      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fbrand","#fbrandOther"):""});}
+      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;rec.fillType=ftype;if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fbrand","#fbrandOther");}}
+      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fillType:ftype,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fbrand","#fbrandOther"):""});}
       if(fov>v.odo)v.odo=fov;
       save();render();closeSheet();toast(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽");
       if(onDone)onDone();
@@ -1720,6 +1835,7 @@ function fuelArchiveModal(vid){
   if(!recs.length)body=`<div class="emptylog" style="margin-bottom:4px">Belum ada catatan bensin. Tekan tombol di atas untuk menambah.</div>`;
   else body=recs.map(r=>{
     const tags=[];
+    if(r.fillType==="full")tags.push(`<span class="ftag full">Penuh</span>`);
     if(r.fuel)tags.push(`<span class="ftag">${esc(r.fuel)}</span>`);
     if(r.place)tags.push(`<span class="ftag">${esc(r.place)}</span>`);
     if(r.liters>0)tags.push(`<span class="ftag">${r.liters} L</span>`);
@@ -1854,6 +1970,7 @@ function vehicleModal(editId){
     </div>
     ${isEdit?"":`<div class="field"><label>Odometer saat ini (km)</label><input id="vo" inputmode="numeric" placeholder="cth: 12500"></div>`}
     <div class="field"><label>Budget bensin / bulan (Rp, opsional)</label><input id="vb" inputmode="numeric" placeholder="cth: 300000" value="${isEdit&&ev.fuelBudget>0?ev.fuelBudget:""}"></div>
+    <div class="field"><label>Kapasitas tangki (liter, opsional)</label><input id="vcap" inputmode="decimal" placeholder="cth: 4.2" value="${isEdit&&ev.tankCapacity>0?ev.tankCapacity:""}"></div>
     <div class="hint" style="margin:-4px 0 14px">Kamus prioritas servis menyesuaikan jenis & transmisi. Saat ini kamus terlengkap untuk <b>Motor Matic</b>; tipe lain memakai versi default sementara.</div>
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
   const vn=$("#vn");if(!isEdit)vn.focus();$("#c").onclick=closeSheet;
@@ -1863,14 +1980,14 @@ function vehicleModal(editId){
     if(isEdit){
       const lost=ev.reminders.filter(r=>r.category&&!dictFor({vtype:nt,trans:ntr}).some(c=>c.name===r.category)).length;
       const apply=()=>{
-        ev.name=name;ev.vtype=nt;ev.trans=ntr;ev.fuelBudget=clean($("#vb").value);
+        ev.name=name;ev.vtype=nt;ev.trans=ntr;ev.fuelBudget=clean($("#vb").value);ev.tankCapacity=Math.max(0,parseFloat(String($("#vcap").value).replace(",","."))||0);
         ev.reminders.forEach(r=>{if(r.category&&!dictFor(ev).some(c=>c.name===r.category))r.category=null;});
         save();render();closeSheet();toast("Kendaraan diperbarui");
       };
       if(lost>0)confirmBox("Ubah jenis kendaraan?",`Kamus prioritas ikut berganti. ${lost} kategori yang sudah diatur tidak ada di kamus baru dan akan dikosongkan — reminder & riwayat tetap aman, prioritas dihitung ulang otomatis dari nama servis.`,apply,"Ya, ubah");
       else apply();
     }else{
-      const v={id:uid(),name,vtype:nt,trans:ntr,odo:clean($("#vo").value),fuelBudget:clean($("#vb").value),sortMode:"auto",reminders:[]};
+      const v={id:uid(),name,vtype:nt,trans:ntr,odo:clean($("#vo").value),fuelBudget:clean($("#vb").value),tankCapacity:Math.max(0,parseFloat(String($("#vcap").value).replace(",","."))||0),sortMode:"auto",reminders:[]};
       state.vehicles.push(v);state.selected=v.id;save();render();closeSheet();toast("Kendaraan ditambahkan");
     }
   };
@@ -2069,7 +2186,7 @@ $("#menuBtn").onclick=()=>{
   $("#about").onclick=()=>{closeSheet();aboutModal();};
 };
 function doExport(){
-  const data=JSON.stringify({app:"garasi-log",version:7,exportedAt:new Date().toISOString(),state},null,2);
+  const data=JSON.stringify({app:"garasi-log",version:8,exportedAt:new Date().toISOString(),state},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
   const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
