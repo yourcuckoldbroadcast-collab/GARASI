@@ -1,56 +1,112 @@
+```javascript
 /* Garasi Log — service worker
-   Strategi: cache-first untuk app shell supaya aplikasi tetap jalan 100% offline.
-   Naikkan versi CACHE saat ada update file agar cache lama dibuang. */
-const CACHE = "garasi-log-v34";
-const SHELL = "./index.html";                 // inti aplikasi — WAJIB tercache
-const ASSETS = ["./", SHELL, "./manifest.json", "./icon192.png", "./icon512.png", "./icon48.png"];
+   Strategi: cache-first untuk app shell supaya aplikasi tetap berjalan offline.
+   Naikkan versi CACHE setiap kali index.html, manifest.json, atau aset utama diperbarui. */
 
-self.addEventListener("install", (e) => {
-  e.waitUntil((async () => {
-    const c = await caches.open(CACHE);
-    await c.add(SHELL);                        // shell harus masuk; bila gagal, install gagal (memang benar)
-    // sisanya best-effort: SATU aset gagal (404/hiccup) tak boleh membatalkan precache & merusak offline
-    await Promise.allSettled(
-      ASSETS.filter((u) => u !== SHELL).map((u) => c.add(u).catch(() => {}))
-    );
-    await self.skipWaiting();
-  })());
+const CACHE = "garasi-log-v35";
+const SHELL = "./index.html";
+
+const ASSETS = [
+  "./",
+  SHELL,
+  "./manifest.json",
+  "./icon192.png",
+  "./icon512.png",
+  "./icon48.png"
+];
+
+/* Instalasi:
+   index.html wajib berhasil dicache.
+   Aset lain bersifat best-effort agar satu ikon yang hilang tidak menggagalkan instalasi. */
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    (async () => {
+      const cache = await caches.open(CACHE);
+
+      // App shell wajib tersedia untuk penggunaan offline.
+      await cache.add(SHELL);
+
+      // Aset lainnya tidak boleh menggagalkan instalasi seluruh service worker.
+      await Promise.allSettled(
+        ASSETS
+          .filter((url) => url !== SHELL)
+          .map((url) => cache.add(url).catch(() => null))
+      );
+
+      await self.skipWaiting();
+    })()
+  );
 });
 
-self.addEventListener("activate", (e) => {
-  e.waitUntil((async () => {
-    const keys = await caches.keys();
-    await Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)));
-    await self.clients.claim();
-  })());
+/* Aktivasi:
+   hapus cache versi lama dan langsung ambil kendali atas halaman yang terbuka. */
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      const cacheKeys = await caches.keys();
+
+      await Promise.all(
+        cacheKeys
+          .filter((key) => key !== CACHE)
+          .map((key) => caches.delete(key))
+      );
+
+      await self.clients.claim();
+    })()
+  );
 });
 
-self.addEventListener("fetch", (e) => {
-  const req = e.request;
-  if (req.method !== "GET") return;
+/* Fetch:
+   - Navigasi halaman memakai app shell dari cache.
+   - Aset lain memakai cache-first, lalu jaringan sebagai cadangan.
+   - Respons same-origin yang berhasil akan disimpan ke cache. */
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
 
-  // Membuka aplikasi (navigasi): selalu sajikan shell dari cache → offline 100% andal,
-  // apa pun start_url/URL-nya. Tetap cache-first sesuai strategi.
-  if (req.mode === "navigate") {
-    e.respondWith(
-      caches.match(SHELL).then((shell) => shell || fetch(req).catch(() => caches.match(SHELL)))
-    );
+  if (request.method !== "GET") {
     return;
   }
 
-  // Aset lain: cache-first, jaringan sebagai cadangan + simpan salinan same-origin.
-  e.respondWith(
-    caches.match(req).then((hit) =>
-      hit ||
-      fetch(req)
-        .then((res) => {
-          if (res && res.ok && new URL(req.url).origin === location.origin) {
-            const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+  // Permintaan navigasi selalu diarahkan ke index.html agar PWA tetap berjalan offline.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      caches.match(SHELL).then((cachedShell) => {
+        if (cachedShell) {
+          return cachedShell;
+        }
+
+        return fetch(request).catch(() => caches.match(SHELL));
+      })
+    );
+
+    return;
+  }
+
+  // Aset biasa: cache-first.
+  event.respondWith(
+    caches.match(request).then((cachedResponse) => {
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      return fetch(request)
+        .then((networkResponse) => {
+          if (
+            networkResponse &&
+            networkResponse.ok &&
+            new URL(request.url).origin === self.location.origin
+          ) {
+            const responseCopy = networkResponse.clone();
+
+            caches.open(CACHE).then((cache) => {
+              cache.put(request, responseCopy);
+            });
           }
-          return res;
+
+          return networkResponse;
         })
-        .catch(() => caches.match(SHELL))
-    )
+        .catch(() => caches.match(SHELL));
+    })
   );
 });
+```
