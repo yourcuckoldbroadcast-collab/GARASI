@@ -234,6 +234,18 @@
   .gauge .g-warn{margin-top:11px;font-size:12px;color:var(--red);background:rgba(255,93,82,.08);border:1px solid rgba(255,93,82,.2);border-radius:9px;padding:9px 11px}
   .gauge .g-note{margin-top:10px;font-size:10.5px;color:var(--faint);line-height:1.45}
   .ftag.full{color:var(--green);border-color:rgba(120,200,130,.3);background:rgba(120,200,130,.1)}
+  .ftag.gap{color:var(--amber);border-color:rgba(255,196,84,.32);background:rgba(255,196,84,.09)}
+  .gapcard{border:1px dashed rgba(255,196,84,.34);border-radius:14px;background:rgba(255,196,84,.055);padding:13px 14px;margin-bottom:11px}
+  .gapcard.pending{border-color:rgba(255,157,46,.42);background:rgba(255,157,46,.065)}
+  .gapcard .gh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+  .gapcard .gt{font-weight:700;color:var(--amber);font-size:14px}
+  .gapcard.pending .gt{color:var(--orange)}
+  .gapcard .gm{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:5px}
+  .gapcard .gacts{display:flex;gap:7px;justify-content:flex-end;margin-top:10px}
+  .gap-note{border:1px solid rgba(255,196,84,.25);background:rgba(255,196,84,.06);border-radius:11px;padding:10px 12px;margin:0 0 12px;font-size:12px;color:var(--muted);line-height:1.5}
+  .gap-note b{color:var(--amber)}
+  .gap-choice{display:flex;align-items:flex-start;gap:9px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.025);padding:11px 12px;margin:0 0 12px;color:var(--muted);font-size:12px;line-height:1.45;cursor:pointer}
+  .gap-choice input{margin-top:2px;accent-color:var(--amber)}
   .two{display:flex;gap:10px}.two>*{flex:1}
   .row{display:flex;gap:10px;margin-top:6px}
   .btn{flex:1;padding:14px;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;border:1px solid var(--line2)}
@@ -486,6 +498,7 @@
   .trend-legend i.smooth{background:var(--chart-svc);height:3px}
   .trend-legend i.base{background:transparent;border-top:1px dashed var(--muted);height:0}
   .trend-legend i.sus{width:7px;height:7px;border-radius:50%;background:transparent;border:1px solid var(--orange)}
+  .trend-legend i.gap{width:2px;height:10px;border-radius:0;background:var(--amber);box-shadow:0 0 0 1px rgba(255,196,84,.18)}
   .trend-method{font-size:11px;color:var(--faint);line-height:1.5;margin-top:8px}
   .trend-empty{border:1px dashed var(--line2);border-radius:14px;padding:18px 16px;background:transparent;margin-bottom:8px}
   .trend-empty b{color:var(--text)}
@@ -494,6 +507,7 @@
   .ftag.suspect{color:var(--orange);border-color:rgba(255,157,46,.3);background:rgba(255,157,46,.08)}
   .ftag.excluded{color:var(--red);border-color:rgba(255,93,82,.28);background:rgba(255,93,82,.08)}
   .ftag.forced{color:var(--green);border-color:rgba(65,217,127,.28);background:rgba(65,217,127,.08)}
+  .ftag.reset{color:var(--amber);border-color:rgba(255,196,84,.32);background:rgba(255,196,84,.09)}
 
 </style>
 </head>
@@ -677,6 +691,18 @@ function migrate(s){
         createdAt:Number.isFinite(Number(p.createdAt))?Number(p.createdAt):(parseD(p.date).getTime()+pi),
         analyticsOverride:["include","exclude"].includes(p.analyticsOverride)?p.analyticsOverride:"auto"}))
       .filter(p=>p.cost>0||p.liters>0||p.odo>0);
+    if(!Array.isArray(v.fuelGaps))v.fuelGaps=[];
+    v.fuelGaps=v.fuelGaps.filter(g=>g&&typeof g==="object").map((g,gi)=>({
+      id:g.id||uid(),reason:"missing_fuel_history",
+      date:/^\d{4}-\d{2}-\d{2}$/.test(g.date)?g.date:todayStr(),
+      startAfterId:typeof g.startAfterId==="string"?g.startAfterId:null,
+      startAfterDate:/^\d{4}-\d{2}-\d{2}$/.test(g.startAfterDate)?g.startAfterDate:null,
+      baselineId:typeof g.baselineId==="string"?g.baselineId:null,
+      baselineDate:/^\d{4}-\d{2}-\d{2}$/.test(g.baselineDate)?g.baselineDate:null,
+      createdAt:Number.isFinite(Number(g.createdAt))?Number(g.createdAt):(Date.now()+gi),
+      closedAt:Number.isFinite(Number(g.closedAt))?Number(g.closedAt):null,status:g.baselineId?"recovered":"pending"
+    }));
+    normalizeFuelGaps(v);
   });
   if(!s.selected||!s.vehicles.some(v=>v.id===s.selected))
     s.selected=s.vehicles[0]?s.vehicles[0].id:null;
@@ -824,6 +850,25 @@ function touchedThisMonth(v){
 }
 
 /* ---------- BERANDA (papan kerja / feed lintas-kendaraan) ---------- */
+function quickLogHTML(){
+  let h=`<div class="sect" style="margin-top:18px"><h2>Catat Cepat</h2></div>`;
+  state.vehicles.forEach(v=>{
+    const fuelTxt=lastFuelDate(v)?"isi "+relDays(lastFuelDate(v)):"belum ada isi bensin";
+    const odoTxt=lastOdoDate(v)?"odo "+relDays(lastOdoDate(v)):"odo belum dicatat";
+    const dot=touchedThisMonth(v)?"":`<span class="dot" title="belum dicatat bulan ini"></span>`;
+    const pg=pendingFuelGap(v);
+    h+=`<div class="qcard">
+      <div class="qtop"><div>
+        <div class="qn">${dot}${esc(v.name)}</div>
+        <div class="qsub">⛽ ${fuelTxt} · 📍 ${odoTxt}${pg?` · <span style="color:var(--orange)">gap aktif</span>`:""}</div></div>
+        <div class="qo">${nf(v.odo)} km</div></div>
+      <div class="qacts">
+        <button class="qbtn fuel" data-fuel="${v.id}"><svg viewBox="0 0 24 24"><path d="M14 20V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14"/><path d="M3 20h12"/><path d="M14 8h2.5a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V9.5L18 6"/></svg>Bensin</button>
+        <button class="qbtn" data-odo="${v.id}"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 13l3-2.5M12 4V2M5 6 3.6 4.6M19 6l1.4-1.4"/></svg>Odometer</button>
+      </div></div>`;
+  });
+  return h;
+}
 function renderBeranda(){
   const app=APP();
   if(state.vehicles.length===0){app.innerHTML=emptyGarage("Papan kerja kosong","Tambahkan kendaraan pertamamu untuk mulai melacak servis, bensin & jarak tempuh.");app.querySelector("#addV").onclick=()=>vehicleModal();return;}
@@ -838,7 +883,9 @@ function renderBeranda(){
         <div class="wacts"><button class="btn primary" data-fin="${v.id}|${w.id}" style="padding:11px 14px">Selesai &amp; catat</button>
           <button class="mini" data-cancel="${v.id}|${w.id}">Batalkan</button></div></div>`;});
   }
-  h+=`<div class="sect" style="margin-top:${wos.length?16:6}px"><h2>Perlu Perhatian</h2></div>`;
+  // Aksi berfrekuensi tinggi ditempatkan langsung setelah pekerjaan aktif.
+  h+=quickLogHTML();
+  h+=`<div class="sect" style="margin-top:18px"><h2>Perlu Perhatian</h2></div>`;
   if(att.length){
     att.forEach(({v,r,s})=>{
       const rests=[];
@@ -858,7 +905,6 @@ function renderBeranda(){
   }else{
     h+=`<div class="calm"><span class="ok">✓</span> Semua servis aman — tidak ada yang mendesak.</div>`;
   }
-  // servis mendatang: 2 teratas yang masih aman tapi paling dekat (persiapan dana)
   const up=upcomingItems(2);
   if(up.length){
     h+=`<div class="sect" style="margin-top:18px"><h2>Servis Mendatang</h2></div>`;
@@ -875,22 +921,6 @@ function renderBeranda(){
         <div class="bar"><i style="width:${s.pct}%"></i></div>
         <div class="foot" style="justify-content:flex-end"><div class="acts"><span class="rpill">siapkan dana servis</span></div></div></div>`;});
   }
-  // kartu cepat per kendaraan (selalu ada → beranda tak pernah kosong)
-  h+=`<div class="sect" style="margin-top:18px"><h2>Catat Cepat</h2></div>`;
-  state.vehicles.forEach(v=>{
-    const fuelTxt=lastFuelDate(v)?"isi "+relDays(lastFuelDate(v)):"belum ada isi bensin";
-    const odoTxt=lastOdoDate(v)?"odo "+relDays(lastOdoDate(v)):"odo belum dicatat";
-    const dot=touchedThisMonth(v)?"":`<span class="dot" title="belum dicatat bulan ini"></span>`;
-    h+=`<div class="qcard">
-      <div class="qtop"><div>
-        <div class="qn">${dot}${esc(v.name)}</div>
-        <div class="qsub">⛽ ${fuelTxt} · 📍 ${odoTxt}</div></div>
-        <div class="qo">${nf(v.odo)} km</div></div>
-      <div class="qacts">
-        <button class="qbtn fuel" data-fuel="${v.id}"><svg viewBox="0 0 24 24"><path d="M14 20V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v14"/><path d="M3 20h12"/><path d="M14 8h2.5a2 2 0 0 1 2 2v6a1.5 1.5 0 0 0 3 0V9.5L18 6"/></svg>Bensin</button>
-        <button class="qbtn" data-odo="${v.id}"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="7"/><path d="M12 13l3-2.5M12 4V2M5 6 3.6 4.6M19 6l1.4-1.4"/></svg>Odometer</button>
-      </div></div>`;
-  });
   app.innerHTML=h;
   app.querySelectorAll("[data-open]").forEach(el=>el.onclick=()=>{const[vid,rid]=el.dataset.open.split("|");state.selected=vid;detailSheet(rid);});
   app.querySelectorAll("[data-done]").forEach(el=>el.onclick=e=>{e.stopPropagation();const[vid,rid]=el.dataset.done.split("|");state.selected=vid;serviceModal(rid);});
@@ -1287,12 +1317,15 @@ function budgetCard(v){
   if(spent>0){
     const w=dim>0?dom/dim:1;                             // bobot laju bulan ini (tumbuh sepanjang bulan)
     const linear=spent/Math.max(1,dom)*dim;             // ekstrapolasi laju s/d hari ini
-    const prior=monthlySpend(v).filter(d=>d.key<ym&&d.fuel>0).map(d=>d.fuel);
-    const hist=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:null; // rata-rata bulan-bulan lalu
+    const gapMonths=fuelGapMonthSet(v);
+    const prior=monthlySpend(v).filter(d=>d.key<ym&&d.fuel>0&&!gapMonths.has(d.key)).map(d=>d.fuel);
+    const hist=prior.length?prior.reduce((a,b)=>a+b,0)/prior.length:null; // bulan dengan histori gap tidak dipakai belajar
     proj=Math.max(spent,Math.round(hist!=null?(w*linear+(1-w)*Math.max(hist,spent)):linear));
   }
   let projHTML;
-  if(spent<=0)projHTML=`<div class="budg-proj">Belum ada pengeluaran bensin bulan ini.</div>`;
+  const currentGapMonth=fuelGapMonthSet(v).has(ym);
+  if(currentGapMonth)projHTML=`<div class="budg-proj"><span class="budg-verdict bad">Prediksi dinonaktifkan</span><br>Histori pengisian bulan ini tidak lengkap. Pengeluaran yang tercatat tetap ditampilkan.</div>`;
+  else if(spent<=0)projHTML=`<div class="budg-proj">Belum ada pengeluaran bensin bulan ini.</div>`;
   else{
     const over=proj-budget;
     const verdict=over>0?`<span class="budg-verdict bad">✗ Diproyeksikan lewat Rp ${nf(over)}</span>`:`<span class="budg-verdict ok">✓ Dalam budget</span>`;
@@ -1319,6 +1352,65 @@ function fuelEntries(v){
     const ac=Number(a.createdAt)||0,bc=Number(b.createdAt)||0;
     return ac-bc;
   });
+}
+function normalizeFuelGaps(v){
+  if(!Array.isArray(v.fuelGaps))v.fuelGaps=[];
+  const entries=fuelEntries(v),byId=new Map(entries.map(e=>[e.id,e])),idx=new Map(entries.map((e,i)=>[e.id,i]));
+  v.fuelGaps.forEach(g=>{
+    if(g.startAfterId&&!byId.has(g.startAfterId))g.startAfterId=null;
+    if(g.baselineId){
+      const b=byId.get(g.baselineId);
+      if(!b||b.fillType!=="full"){g.baselineId=null;g.baselineDate=null;g.closedAt=null;}
+      else g.baselineDate=b.date;
+    }
+    if(!g.baselineId&&g.startAfterId&&idx.has(g.startAfterId)){
+      const ai=idx.get(g.startAfterId);
+      const next=entries.slice(ai+1).find(e=>e.fillType==="full"&&(e.odo||0)>0&&(e.liters||0)>0);
+      if(next){g.baselineId=next.id;g.baselineDate=next.date;g.closedAt=g.closedAt||Date.now();}
+    }
+    const a=g.startAfterId?byId.get(g.startAfterId):null;
+    if(a)g.startAfterDate=a.date;
+    g.status=g.baselineId?"recovered":"pending";
+  });
+  v.fuelGaps.sort((a,b)=>(a.createdAt||0)-(b.createdAt||0));
+  return v.fuelGaps;
+}
+function pendingFuelGap(v){return normalizeFuelGaps(v).slice().reverse().find(g=>!g.baselineId)||null;}
+function gapByBaseline(v,id){return normalizeFuelGaps(v).find(g=>g.baselineId===id)||null;}
+function latestRecoveredFuelGap(v){return normalizeFuelGaps(v).filter(g=>g.baselineId).slice(-1)[0]||null;}
+function fuelGapMonthSet(v){
+  const out=new Set();
+  normalizeFuelGaps(v).forEach(g=>{
+    const a=g.startAfterDate||g.date,b=g.baselineDate||todayStr();
+    if(!a||!b)return;
+    let y=+a.slice(0,4),m=+a.slice(5,7),ey=+b.slice(0,4),em=+b.slice(5,7),guard=0;
+    while((y<ey||(y===ey&&m<=em))&&guard++<240){out.add(`${y}-${String(m).padStart(2,"0")}`);m++;if(m>12){m=1;y++;}}
+  });
+  return out;
+}
+function createRecoveredFuelGap(v,baseline){
+  const entries=fuelEntries(v),bi=entries.findIndex(e=>e.id===baseline.id);
+  let anchor=null;for(let i=bi-1;i>=0;i--){if(entries[i].fillType==="full"&&(entries[i].odo||0)>0){anchor=entries[i];break;}}
+  if(!anchor)return null;
+  if(gapByBaseline(v,baseline.id))return gapByBaseline(v,baseline.id);
+  const g={id:uid(),reason:"missing_fuel_history",date:baseline.date,startAfterId:anchor.id,startAfterDate:anchor.date,baselineId:baseline.id,baselineDate:baseline.date,createdAt:Date.now(),closedAt:Date.now(),status:"recovered"};
+  v.fuelGaps.push(g);normalizeFuelGaps(v);return g;
+}
+function markFuelGap(vid,onDone){
+  const v=state.vehicles.find(x=>x.id===vid);if(!v)return;
+  const pending=pendingFuelGap(v);if(pending){toast("Recording Gap sudah aktif");return;}
+  const anchor=fuelEntries(v).slice().reverse().find(e=>e.fillType==="full"&&(e.odo||0)>0&&(e.liters||0)>0);
+  if(!anchor){toast("Butuh minimal satu pengisian penuh sebagai titik awal");return;}
+  confirmBox("Tandai histori pengisian terlewat?",`Analitik setelah ${fmtDLong(anchor.date)} dihentikan sementara. Pengisian PENUH berikutnya otomatis menjadi baseline baru.`,()=>{
+    v.fuelGaps.push({id:uid(),reason:"missing_fuel_history",date:todayStr(),startAfterId:anchor.id,startAfterDate:anchor.date,baselineId:null,baselineDate:null,createdAt:Date.now(),closedAt:null,status:"pending"});
+    save();render();toast("Recording Gap aktif");if(onDone)onDone();
+  },"Ya, tandai");
+}
+function deleteFuelGap(vid,id,onDone){
+  const v=state.vehicles.find(x=>x.id===vid);if(!v)return;const g=(v.fuelGaps||[]).find(x=>x.id===id);if(!g)return;
+  confirmBox(g.baselineId?"Hapus penanda Gap?":"Batalkan Recording Gap?",g.baselineId?"Siklus lama akan kembali dinilai oleh analitik. Hapus hanya bila histori sebenarnya lengkap.":"Analitik akan kembali memakai kontinuitas lama.",()=>{
+    v.fuelGaps=(v.fuelGaps||[]).filter(x=>x.id!==id);save();render();toast(g.baselineId?"Penanda Gap dihapus":"Recording Gap dibatalkan");if(onDone)onDone();
+  },g.baselineId?"Ya, hapus":"Ya, batalkan");
 }
 function madOf(values){
   if(!values.length)return 0;
@@ -1356,6 +1448,7 @@ function maturityFor(n){
   return {key:"mature",label:"Matang",tone:"good"};
 }
 function buildFuelAnalytics(v){
+  normalizeFuelGaps(v);
   const entries=fuelEntries(v),limits=fuelLimits(v),cap=parseFloat(v.tankCapacity)||0;
   const issues=[],entryIssues=new Map(),seen=new Map();
   const addEntryIssue=(e,msg,critical=false)=>{
@@ -1370,47 +1463,40 @@ function buildFuelAnalytics(v){
       addEntryIssue(e,`Odometer ${fmtD(e.date)} (${nf(e.odo)}) lebih kecil dari catatan sebelumnya.`,true);
   });
 
+  const gapMap=new Map(normalizeFuelGaps(v).filter(g=>g.baselineId).map(g=>[g.baselineId,g]));
   const fullIdx=[];entries.forEach((e,i)=>{if(e.fillType==="full"&&(e.odo||0)>0)fullIdx.push(i);});
   const cycles=[];
   for(let k=1;k<fullIdx.length;k++){
-    const ai=fullIdx[k-1],bi=fullIdx[k],A=entries[ai],B=entries[bi],segment=entries.slice(ai+1,bi+1);
-    const d=(B.odo||0)-(A.odo||0),l=segment.reduce((s,e)=>s+(e.liters||0),0),cost=segment.reduce((s,e)=>s+(e.cost||0),0);
+    const ai=fullIdx[k-1],bi=fullIdx[k],A=entries[ai],B=entries[bi],segment=entries.slice(ai+1,bi+1),gap=gapMap.get(B.id)||null;
+    const d=(B.odo||0)-(A.odo||0),l=segment.reduce((sum,e)=>sum+(e.liters||0),0),cost=segment.reduce((sum,e)=>sum+(e.cost||0),0);
     const reasons=[];let hardInvalid=false;
     if(d<=0){reasons.push("Odometer akhir tidak lebih besar dari awal siklus.");hardInvalid=true;}
     if(l<=0){reasons.push("Total liter siklus tidak tersedia.");hardInvalid=true;}
     const eff=d>0&&l>0?d/l:null;
-    if(eff!=null&&(eff<limits.effMin||eff>limits.effMax)){
-      reasons.push(`Efisiensi ${eff.toFixed(1).replace(".",",")} km/l berada di luar batas wajar.`);hardInvalid=true;
-    }
+    if(eff!=null&&(eff<limits.effMin||eff>limits.effMax)){reasons.push(`Efisiensi ${eff.toFixed(1).replace(".",",")} km/l berada di luar batas wajar.`);hardInvalid=true;}
     const segEntryProblems=segment.flatMap(e=>(entryIssues.get(e.id)||[]).map(x=>x.msg));
     if(segEntryProblems.length){reasons.push(...segEntryProblems);if(segment.some(e=>(entryIssues.get(e.id)||[]).some(x=>x.critical)))hardInvalid=true;}
     const override=segment.some(e=>e.analyticsOverride==="exclude")?"exclude":segment.some(e=>e.analyticsOverride==="include")?"include":"auto";
     if(override==="exclude")reasons.push("Dikecualikan manual dari analitik.");
-    cycles.push({
-      index:k-1,startId:A.id,endId:B.id,from:A.date,to:B.date,fromOdo:A.odo,toOdo:B.odo,
-      d,l,cost,eff,segmentIds:segment.map(e=>e.id),override,reasons,
-      status:(hardInvalid||override==="exclude")?"invalid":"valid",hardInvalid,
-      includedInTrend:!hardInvalid&&override!=="exclude"
-    });
+    if(gap)reasons.unshift("Histori pengisian di antara dua baseline tidak lengkap.");
+    const status=gap?"gap":((hardInvalid||override==="exclude")?"invalid":"valid");
+    cycles.push({index:k-1,startId:A.id,endId:B.id,from:A.date,to:B.date,fromOdo:A.odo,toOdo:B.odo,d,l,cost,eff,segmentIds:segment.map(e=>e.id),override,reasons,status,hardInvalid,gapId:gap?gap.id:null,includedInTrend:!gap&&!hardInvalid&&override!=="exclude"});
   }
 
-  // Outlier relatif baru dinilai setelah histori kendaraan cukup membentuk baseline pribadi.
-  const prelim=cycles.filter(c=>c.includedInTrend&&c.eff!=null),preVals=prelim.map(c=>c.eff);
-  if(preVals.length>=5){
+  // Outlier dinilai per segmen kontinu; Recording Gap tidak boleh mencampur baseline lama dan baru.
+  const segments=[];let seg=[];
+  cycles.forEach(c=>{if(c.status==="gap"){if(seg.length)segments.push(seg);seg=[];}else if(c.includedInTrend&&c.eff!=null)seg.push(c);});if(seg.length)segments.push(seg);
+  segments.forEach(prelim=>{
+    const preVals=prelim.map(c=>c.eff);if(preVals.length<5)return;
     const med=median(preVals),mad=madOf(preVals);
     prelim.forEach(c=>{
       let outlier=false;
       if(mad>.05){const rz=.6745*Math.abs(c.eff-med)/mad;outlier=rz>3.5;}
       else outlier=Math.abs(c.eff-med)/Math.max(med,.001)>.18;
-      if(outlier&&c.override!=="include"){
-        c.status="suspect";c.includedInTrend=false;
-        c.reasons.push(`Menyimpang kuat dari pola pribadi kendaraan (median ${med.toFixed(1).replace(".",",")} km/l).`);
-      }else if(outlier&&c.override==="include"){
-        c.status="forced";c.includedInTrend=true;
-        c.reasons.push("Outlier digunakan karena dipaksa masuk secara manual.");
-      }
+      if(outlier&&c.override!=="include"){c.status="suspect";c.includedInTrend=false;c.reasons.push(`Menyimpang kuat dari pola pribadi kendaraan (median ${med.toFixed(1).replace(".",",")} km/l).`);}
+      else if(outlier&&c.override==="include"){c.status="forced";c.includedInTrend=true;c.reasons.push("Outlier digunakan karena dipaksa masuk secara manual.");}
     });
-  }
+  });
 
   cycles.forEach(c=>{
     if(c.status==="invalid"||c.status==="suspect"){
@@ -1419,7 +1505,12 @@ function buildFuelAnalytics(v){
     }
   });
 
-  const validCycles=cycles.filter(c=>c.includedInTrend&&c.eff!=null),n=validCycles.length,candidateCount=cycles.length;
+  const pendingGap=pendingFuelGap(v),recovered=normalizeFuelGaps(v).filter(g=>g.baselineId);
+  let latestGap=null,lastGapIndex=-1;
+  recovered.forEach(g=>{const ci=cycles.findIndex(c=>c.endId===g.baselineId);if(ci>=lastGapIndex){lastGapIndex=ci;latestGap=g;}});
+  const scopedCycles=pendingGap?[]:cycles.filter(c=>c.index>lastGapIndex);
+  const validCycles=scopedCycles.filter(c=>c.includedInTrend&&c.eff!=null),n=validCycles.length,candidateCount=scopedCycles.length;
+  const historyValidCycles=cycles.filter(c=>c.includedInTrend&&c.eff!=null);
   const lifetimeEfficiency=aggregateCycles(validCycles);
   const recentCycles=validCycles.slice(-Math.min(5,n)),recentEfficiency=aggregateCycles(recentCycles);
   const estimatedEfficiency=lifetimeEfficiency==null?null:(recentEfficiency==null?lifetimeEfficiency:.7*recentEfficiency+.3*lifetimeEfficiency);
@@ -1444,19 +1535,22 @@ function buildFuelAnalytics(v){
   let confidence=Math.round(100*(.35*maturity+.30*validity+.20*stability+.15*agreement));
   if(n<4)confidence=Math.min(confidence,34);else if(n<8)confidence=Math.min(confidence,69);
   if(noisePct>25)confidence=Math.min(confidence,59);else if(noisePct>16)confidence=Math.min(confidence,69);
-  const recentBad=cycles.slice(-4).some(c=>c.status==="invalid");
-  if(recentBad)confidence=Math.min(confidence,34);else if(cycles.some(c=>c.status==="invalid"))confidence=Math.min(confidence,69);
-  const maturityBand=maturityFor(n);
-  const strength=n<4?"Belum cukup":confidence>=75?"Tinggi":confidence>=45?"Sedang":"Rendah";
+  const recentBad=scopedCycles.slice(-4).some(c=>c.status==="invalid");
+  if(recentBad)confidence=Math.min(confidence,34);else if(scopedCycles.some(c=>c.status==="invalid"))confidence=Math.min(confidence,69);
+  if(pendingGap)confidence=Math.min(confidence,12);
+  else if(latestGap){const caps=[18,34,49,64,79];if(n<caps.length)confidence=Math.min(confidence,caps[n]);}
+  const maturityBand=maturityFor(n),strength=n<4?"Belum cukup":confidence>=75?"Tinggi":confidence>=45?"Sedang":"Rendah";
   const validityPct=candidateCount?Math.round(validity*100):0;
 
-  const smoothVals=ewma(validCycles.map(c=>c.eff));
-  const smoothed=validCycles.map((c,i)=>({cycleIndex:c.index,value:smoothVals[i]}));
+  const smoothed=[];let ew=null;
+  cycles.forEach(c=>{
+    if(c.status==="gap"){ew=null;return;}
+    if(c.includedInTrend&&c.eff!=null){ew=ew==null?c.eff:.35*c.eff+.65*ew;smoothed.push({cycleIndex:c.index,value:ew});}
+  });
   const chartCycles=cycles.filter(c=>Number.isFinite(c.eff));
   const q25=quantile(effVals,.25),q75=quantile(effVals,.75);
-  return {entries,cycles,validCycles,issues,entryIssues,candidateCount,n,lifetimeEfficiency,recentEfficiency,estimatedEfficiency,
-    medianEfficiency:medEff,noisePct,deadband,maturityBand,validityPct,confidence,strength,
-    trend:{K,recent,prior,deltaPct,slope,slopePct,direction,chartCycles,smoothed,baseline:lifetimeEfficiency,n},
+  return {entries,cycles,validCycles,historyValidCycles,issues,entryIssues,candidateCount,n,lifetimeEfficiency,recentEfficiency,estimatedEfficiency,medianEfficiency:medEff,noisePct,deadband,maturityBand,validityPct,confidence,strength,pendingGap,latestGap,recoveryValidCount:n,analysisStartIndex:lastGapIndex+1,
+    trend:{K,recent,prior,deltaPct,slope,slopePct,direction,chartCycles,smoothed,baseline:lifetimeEfficiency,n,baselineStartIndex:lastGapIndex+1},
     rangeBand:q25!=null&&q75!=null?{low:q25,high:q75}:null};
 }
 function fullToFull(v){
@@ -1466,6 +1560,7 @@ function fullToFull(v){
 function bestEfficiency(v){
   const a=buildFuelAnalytics(v);
   if(a.lifetimeEfficiency>0)return {kmpl:a.lifetimeEfficiency,estimatedKmpl:a.estimatedEfficiency,measured:true,count:a.n,rangeBand:a.rangeBand};
+  if(a.pendingGap||a.latestGap)return null;
   const vf=vehicleFuel(v);
   if(vf&&vf.kmPerL>0)return {kmpl:vf.kmPerL,estimatedKmpl:vf.kmPerL,measured:false,count:0,rangeBand:null};
   return null;
@@ -1506,26 +1601,27 @@ function sparklineSVG(t){
   if(!all.length||!valid.length)return "";
   const values=valid.map(c=>c.eff),center=median(values),mad=madOf(values);
   const spread=Math.max(center*.08,3*1.4826*mad,1),yMin=Math.max(0,center-spread),yMax=center+spread;
-  const x=c=>all.length>1?L+(c.index-all[0].index)/(all[all.length-1].index-all[0].index)*(W-L-R):(W-R+L)/2;
+  const denom=Math.max(1,all[all.length-1].index-all[0].index);
+  const x=c=>all.length>1?L+(c.index-all[0].index)/denom*(W-L-R):(W-R+L)/2;
   const y=v=>{const z=clampN(v,yMin,yMax);return T+(yMax-z)/(yMax-yMin)*(H-T-B);};
-  const validPts=valid.map(c=>`${x(c).toFixed(1)},${y(c.eff).toFixed(1)}`).join(" ");
-  const smoothPts=(t.smoothed||[]).filter(p=>all.some(c=>c.index===p.cycleIndex)).map(p=>{
-    const c=all.find(x=>x.index===p.cycleIndex);return `${x(c).toFixed(1)},${y(p.value).toFixed(1)}`;
-  }).join(" ");
-  const baseline=t.baseline>0?y(t.baseline):null;
+  const splitSegments=points=>{const out=[];let cur=[];points.forEach(p=>{if(cur.length&&p.index!==cur[cur.length-1].index+1){out.push(cur);cur=[];}cur.push(p);});if(cur.length)out.push(cur);return out;};
+  const validLines=splitSegments(valid).map(seg=>`<polyline points="${seg.map(c=>`${x(c).toFixed(1)},${y(c.eff).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--amber-dim)" stroke-width="1.2" opacity=".55" stroke-linejoin="round"/>`).join("");
+  const smoothSource=(t.smoothed||[]).map(p=>{const c=all.find(x=>x.index===p.cycleIndex);return c?{...p,index:c.index,c}:null;}).filter(Boolean);
+  const smoothLines=splitSegments(smoothSource).map(seg=>`<polyline points="${seg.map(p=>`${x(p.c).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--chart-svc)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`).join("");
+  const baseline=t.baseline>0?y(t.baseline):null,baseStart=all.find(c=>c.index>=t.baselineStartIndex)||all[0];
   const grids=[.25,.5,.75].map(q=>{const gy=T+q*(H-T-B);return `<line x1="${L}" y1="${gy}" x2="${W-R}" y2="${gy}" stroke="rgba(255,210,140,.07)" stroke-width="1"/>`;}).join("");
+  const gapMarkers=all.filter(c=>c.status==="gap").map(c=>{const xx=x(c);return `<line x1="${xx}" y1="${T}" x2="${xx}" y2="${H-B}" stroke="var(--amber)" stroke-width="1.5" stroke-dasharray="3 3" opacity=".9"><title>Recording Gap · baseline dipulihkan ${fmtD(c.to)}</title></line><text x="${Math.min(W-R-2,xx+3)}" y="${T+8}" fill="var(--amber)" font-size="7" font-family="var(--mono)">RESET</text>`;}).join("");
   const circles=all.map(c=>{
     const yy=y(c.eff),xx=x(c),clipped=c.eff<yMin||c.eff>yMax;
+    if(c.status==="gap")return `<rect x="${xx-3}" y="${yy-3}" width="6" height="6" transform="rotate(45 ${xx} ${yy})" fill="var(--bg2)" stroke="var(--amber)" stroke-width="1.5"><title>${fmtD(c.from)}–${fmtD(c.to)} · Recording Gap · tidak dihitung</title></rect>`;
     if(c.status==="valid"||c.status==="forced")return `<circle cx="${xx}" cy="${yy}" r="3" fill="var(--amber)" stroke="var(--bg2)" stroke-width="1.2"><title>${fmtD(c.from)}–${fmtD(c.to)} · ${c.eff.toFixed(1)} km/l${clipped?" · di luar rentang tampilan":""}</title></circle>`;
     const col=c.status==="suspect"?"var(--orange)":"var(--red)";
     return `<circle cx="${xx}" cy="${yy}" r="3.4" fill="var(--bg2)" stroke="${col}" stroke-width="1.5"><title>${fmtD(c.from)}–${fmtD(c.to)} · ${c.eff.toFixed(1)} km/l · tidak digunakan</title></circle>`;
   }).join("");
   return `<svg class="trend-spark" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Grafik konsumsi full-to-full">
-    ${grids}
-    ${baseline!=null?`<line x1="${L}" y1="${baseline}" x2="${W-R}" y2="${baseline}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4" opacity=".75"/>`:""}
-    ${validPts?`<polyline points="${validPts}" fill="none" stroke="var(--amber-dim)" stroke-width="1.2" opacity=".55" stroke-linejoin="round"/>`:""}
-    ${smoothPts?`<polyline points="${smoothPts}" fill="none" stroke="var(--chart-svc)" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>`:""}
-    ${circles}
+    ${grids}${gapMarkers}
+    ${baseline!=null?`<line x1="${x(baseStart)}" y1="${baseline}" x2="${W-R}" y2="${baseline}" stroke="var(--muted)" stroke-width="1" stroke-dasharray="4 4" opacity=".75"/>`:""}
+    ${validLines}${smoothLines}${circles}
     <text x="${W-R+4}" y="${T+4}" fill="var(--faint)" font-size="8" font-family="var(--mono)">${yMax.toFixed(1)}</text>
     <text x="${W-R+4}" y="${H-B+2}" fill="var(--faint)" font-size="8" font-family="var(--mono)">${yMin.toFixed(1)}</text>
     <text x="${L}" y="${H-5}" fill="var(--faint)" font-size="8" font-family="var(--mono)">siklus 1</text>
@@ -1538,12 +1634,18 @@ function dqWarnHTML(dq){
   return `<div class="dq-warn"><div class="dq-h"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg> Periksa kualitas data</div><ul>`+
     show.map(s=>`<li>${esc(s)}</li>`).join("")+(more>0?`<li class="more">+${more} catatan lain</li>`:"")+`</ul></div>`;
 }
+function gapNoticeHTML(a){
+  if(a.pendingGap)return `<div class="gapcard pending"><div class="gt">⚠ Recording Gap aktif</div><div class="gm">Analitik konsumsi dan prediksi BBM dihentikan sementara. Catat pengisian <b>PENUH</b> berikutnya untuk membuat baseline baru.</div></div>`;
+  if(a.latestGap){const n=a.recoveryValidCount;return `<div class="gapcard"><div class="gt">┃ Baseline dipulihkan ${fmtDLong(a.latestGap.baselineDate)}</div><div class="gm">Histori sebelum titik ini tetap terlihat, tetapi siklus yang melewati Gap tidak dihitung. Confidence pulih bertahap${n?` · ${n} siklus valid setelah reset`:" setelah siklus baru tersedia"}.</div></div>`;}
+  return "";
+}
 function trendCard(v){
-  const a=buildFuelAnalytics(v),dq=dqWarnHTML(a.issues.map(x=>x.msg));
-  if(a.candidateCount===0)return dq+`<div class="trend-empty"><div class="te-title">Belum ada siklus full-to-full</div>
-    <div class="te-sub">Diperlukan minimal <b>dua pengisian penuh</b> dengan odometer dan liter. Pengisian parsial di antara keduanya akan dijumlahkan otomatis.</div></div>`;
-  if(a.n<3)return dq+`<div class="trend-empty"><div class="te-title">${a.maturityBand.label}</div>
-    <div class="te-sub">Baru tersedia <b>${a.n}</b> siklus valid dari ${a.candidateCount} kandidat. Butuh minimal 3 siklus valid untuk menampilkan pola awal, dan 8 siklus untuk perbandingan 4 lawan 4.</div></div>`;
+  const a=buildFuelAnalytics(v),dq=dqWarnHTML(a.issues.map(x=>x.msg)),gap=gapNoticeHTML(a);
+  const gapChart=a.latestGap&&a.trend.chartCycles.length?`${sparklineSVG(a.trend)}<div class="trend-legend"><span><i></i>nilai siklus</span><span><i class="smooth"></i>EWMA</span><span><i class="sus"></i>dikeluarkan</span><span><i class="gap"></i>baseline reset</span></div>`:"";
+  if(a.pendingGap)return gap+dq+`<div class="trend-empty"><div class="te-title">Menunggu baseline baru</div><div class="te-sub">Pengisian penuh berikutnya akan menutup Recording Gap. Biaya transaksi tetap tercatat, tetapi efisiensi, EWMA, dan prediksi tidak dihitung selama kontinuitas belum pulih.</div></div>`;
+  if(a.latestGap&&a.candidateCount===0)return gap+dq+`<div class="trend">${gapChart}<div class="trend-empty"><div class="te-title">Baseline berhasil dipulihkan</div><div class="te-sub">Diperlukan satu siklus full-to-full baru setelah ${fmtDLong(a.latestGap.baselineDate)} untuk mulai menghitung konsumsi kembali. Histori lama tetap terlihat di sisi sebelum marker reset.</div></div></div>`;
+  if(a.candidateCount===0)return gap+dq+`<div class="trend-empty"><div class="te-title">Belum ada siklus full-to-full</div><div class="te-sub">Diperlukan minimal <b>dua pengisian penuh</b> dengan odometer dan liter. Pengisian parsial di antara keduanya akan dijumlahkan otomatis.</div></div>`;
+  if(a.n<3)return gap+dq+`<div class="trend">${gapChart}<div class="trend-empty"><div class="te-title">${a.maturityBand.label}</div><div class="te-sub">Baru tersedia <b>${a.n}</b> siklus valid dari ${a.candidateCount} kandidat${a.latestGap?" setelah baseline reset":""}. Butuh minimal 3 siklus valid untuk pola awal dan 8 siklus untuk perbandingan 4 lawan 4.</div></div></div>`;
   const t=a.trend,dir=t.direction;
   let msg,arrow="→",cls="flat";
   if(dir==="improving"){msg="Efisiensi terbaru lebih hemat dan kemiringan data mendukung.";arrow="↑";cls="up";}
@@ -1553,19 +1655,18 @@ function trendCard(v){
   else msg="Belum cukup siklus untuk menentukan arah.";
   const pct=t.deltaPct==null?"—":`${Math.abs(t.deltaPct).toFixed(1).replace(".",",")}%`;
   const recent=t.recent!=null?t.recent.toFixed(1).replace(".",",")+" km/l":"—",prior=t.prior!=null?t.prior.toFixed(1).replace(".",",")+" km/l":"—";
-  const qualityTone=a.validityPct>=90?"good":a.validityPct>=70?"warn":"bad";
-  const noiseTone=a.noisePct<=8?"good":a.noisePct<=16?"warn":"bad";
-  const confTier=a.confidence>=75?"Tinggi":a.confidence>=45?"Sedang":"Rendah";
-  const compare=t.K?`${t.K} siklus terbaru dibanding ${t.K} sebelumnya`:"Belum ada perbandingan periode";
+  const qualityTone=a.validityPct>=90?"good":a.validityPct>=70?"warn":"bad",noiseTone=a.noisePct<=8?"good":a.noisePct<=16?"warn":"bad";
+  const confTier=a.confidence>=75?"Tinggi":a.confidence>=45?"Sedang":"Rendah",compare=t.K?`${t.K} siklus terbaru dibanding ${t.K} sebelumnya`:"Belum ada perbandingan periode";
   let note;
-  if(dir==="inconclusive")note="Sistem menahan kesimpulan naik/turun agar satu pola zig-zag tidak diterjemahkan sebagai tren kuat.";
+  if(a.latestGap&&a.n<5)note="Analitik sudah dimulai ulang dari baseline baru. Confidence sengaja dibatasi sampai cukup siklus valid terkumpul setelah reset.";
+  else if(dir==="inconclusive")note="Sistem menahan kesimpulan naik/turun agar satu pola zig-zag tidak diterjemahkan sebagai tren kuat.";
   else if(a.noisePct>16)note="Jumlah data cukup, tetapi variasi penggunaan kendaraan masih tinggi; arah dapat berubah saat siklus baru masuk.";
   else if(a.issues.length)note="Catatan bermasalah tidak digunakan dalam tren. Edit arsip atau pilih “Paksa gunakan” bila datanya memang benar.";
-  else note="Seluruh metrik memakai siklus full-to-full yang sama; tidak ada bonus confidence hanya karena status pengisian penuh.";
-  return dq+`<div class="trend">
-    <div class="trend-meta"><span class="trend-pill measured">Full-to-full terukur</span><span class="trend-pill">${a.n}/${a.candidateCount} siklus valid</span><span class="trend-pill">${a.maturityBand.label}</span></div>
+  else note="Seluruh metrik memakai siklus full-to-full dalam baseline aktif yang sama.";
+  return gap+dq+`<div class="trend">
+    <div class="trend-meta"><span class="trend-pill measured">Full-to-full terukur</span><span class="trend-pill">${a.n}/${a.candidateCount} siklus valid</span><span class="trend-pill">${a.maturityBand.label}</span>${a.latestGap?`<span class="trend-pill">pasca reset</span>`:""}</div>
     ${sparklineSVG(t)}
-    <div class="trend-legend"><span><i></i>nilai siklus</span><span><i class="smooth"></i>EWMA</span><span><i class="base"></i>rata-rata total</span><span><i class="sus"></i>dikeluarkan</span></div>
+    <div class="trend-legend"><span><i></i>nilai siklus</span><span><i class="smooth"></i>EWMA</span><span><i class="base"></i>rata-rata baseline aktif</span><span><i class="sus"></i>dikeluarkan</span><span><i class="gap"></i>baseline reset</span></div>
     <div class="trend-lbl">Arah terbaru</div>
     <div class="trend-foot"><span class="trend-pct ${cls}">${arrow} ${pct}</span><span class="trend-msg">${msg}</span></div>
     <div class="trend-now">${compare} · terbaru ${recent} · sebelumnya ${prior}</div>
@@ -1575,11 +1676,10 @@ function trendCard(v){
       <div class="trend-stat"><div class="k">Kekuatan arah</div><div class="v">${a.strength}</div></div>
       <div class="trend-stat"><div class="k">Variasi robust</div><div class="v ${noiseTone}">±${a.noisePct.toFixed(1).replace(".",",")}%</div></div>
     </div>
-    <div class="trend-lbl">Kepercayaan ringkas</div>
-    <div class="trend-cs"><b>${a.confidence}%</b> <span>(${confTier})</span></div>
+    <div class="trend-lbl">Kepercayaan ringkas</div><div class="trend-cs"><b>${a.confidence}%</b> <span>(${confTier})</span></div>
     <div class="trend-confbar"><i style="width:${a.confidence}%"></i></div>
     <div class="trend-lbl">Catatan</div><div class="trend-disc">${note}</div>
-    <div class="trend-method">Grafik memakai titik konsumsi asli, EWMA α 0,35, domain vertikal robust, dan ambang arah yang menyesuaikan variasi kendaraan.</div>
+    <div class="trend-method">Grafik memutus garis pada data yang dikeluarkan, mereset EWMA saat Recording Gap, dan hanya memakai baseline aktif untuk analitik terbaru.</div>
   </div>`;
 }
 function vehicleService(v){let count=0,cost=0,last=null;v.reminders.forEach(r=>r.logs.forEach(l=>{count++;cost+=l.cost||0;if(!last||l.date>last)last=l.date;}));return {count,cost,last};}
@@ -1723,33 +1823,28 @@ function mountChart(v){
 }
 /* metrik bensin (tank-to-tank, toleran data parsial) */
 function vehicleFuel(v){
-  const f=(v.fuelLog||[]).slice().sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:(a.odo||0)-(b.odo||0));
+  const f=fuelEntries(v);
   const base={count:f.length,totalCost:0,totalLiters:0,everyDays:null,costPerKm:null,kmPerL:null,perDayCost:null,perMonthCost:null,avgPerFill:null,avgLiters:null};
   if(!f.length)return base;
-  const totalCost=f.reduce((s,x)=>s+(x.cost||0),0);
-  const totalLiters=f.reduce((s,x)=>s+(x.liters||0),0);
-  const spanDays=Math.max(0,diffDays(f[0].date,f[f.length-1].date));
+  const totalCost=f.reduce((sum,x)=>sum+(x.cost||0),0),totalLiters=f.reduce((sum,x)=>sum+(x.liters||0),0);
+  const spanDays=Math.max(0,diffDays(f[0].date,f[f.length-1].date)),fa=buildFuelAnalytics(v);
+  let active=f;
+  if(fa.pendingGap)active=[];
+  else if(fa.latestGap){const bi=f.findIndex(x=>x.id===fa.latestGap.baselineId);active=bi>=0?f.slice(bi):[];}
   let everyDays=null;
-  if(f.length>1){const ints=[];for(let i=1;i<f.length;i++){const dd=diffDays(f[i-1].date,f[i].date);if(dd>0)ints.push(dd);}everyDays=median(ints);}
-  const avgPerFill=totalCost>0?totalCost/f.length:null;
-  const avgLiters=totalLiters>0?totalLiters/f.length:null;
-  const wo=f.filter(x=>x.odo>0);
+  if(active.length>1){const ints=[];for(let i=1;i<active.length;i++){const dd=diffDays(active[i-1].date,active[i].date);if(dd>0)ints.push(dd);}everyDays=median(ints);}
+  const avgPerFill=totalCost>0?totalCost/f.length:null,avgLiters=totalLiters>0?totalLiters/f.length:null;
   let costPerKm=null,kmPerL=null;
-  if(wo.length>=2){
-    const dist=Math.max(0,wo[wo.length-1].odo-wo[0].odo);
-    if(dist>0){
-      const after=wo.slice(1);
-      const cAfter=after.reduce((s,x)=>s+(x.cost||0),0);
-      const lAfter=after.reduce((s,x)=>s+(x.liters||0),0);
-      if(cAfter>0)costPerKm=cAfter/dist;
-      if(lAfter>0)kmPerL=dist/lAfter;
-    }
+  if(fa.validCycles.length){
+    const dist=fa.validCycles.reduce((sum,c)=>sum+(c.d||0),0),cost=fa.validCycles.reduce((sum,c)=>sum+(c.cost||0),0),liters=fa.validCycles.reduce((sum,c)=>sum+(c.l||0),0);
+    if(dist>0&&cost>0)costPerKm=cost/dist;if(dist>0&&liters>0)kmPerL=dist/liters;
+  }else if(!fa.pendingGap&&!fa.latestGap){
+    const wo=f.filter(x=>x.odo>0);
+    if(wo.length>=2){const dist=Math.max(0,wo[wo.length-1].odo-wo[0].odo);if(dist>0){const after=wo.slice(1),cAfter=after.reduce((sum,x)=>sum+(x.cost||0),0),lAfter=after.reduce((sum,x)=>sum+(x.liters||0),0);if(cAfter>0)costPerKm=cAfter/dist;if(lAfter>0)kmPerL=dist/lAfter;}}
   }
-  const ff=fullToFull(v);if(ff.length){const td=ff.reduce((s,x)=>s+x.d,0),tl=ff.reduce((s,x)=>s+x.l,0);if(tl>0)kmPerL=td/tl;}
-  const d=vehicleDist(v);
-  let perDayCost=null;
-  if(costPerKm!=null&&d)perDayCost=costPerKm*d.perDay;          // "smart": biaya/km × km/hari
-  else if(spanDays>0)perDayCost=totalCost/spanDays;            // fallback kasar
+  const d=vehicleDist(v);let perDayCost=null;
+  if(costPerKm!=null&&d)perDayCost=costPerKm*d.perDay;
+  else if(spanDays>0&&!fa.pendingGap&&!fa.latestGap)perDayCost=totalCost/spanDays;
   const perMonthCost=perDayCost!=null?perDayCost*30.4:null;
   return {count:f.length,totalCost,totalLiters,everyDays,costPerKm,kmPerL,perDayCost,perMonthCost,avgPerFill,avgLiters};
 }
@@ -1856,6 +1951,7 @@ function fuelModal(vid,opts){
   const dL=isEdit&&rec.liters?rec.liters:"", dC=isEdit&&rec.cost?rec.cost:"";
   const dFill=isEdit?(rec.fillType==="full"?"full":"partial"):"partial";
   const dOverride=isEdit?(rec.analyticsOverride||"auto"):"auto";
+  const pendingGap=pendingFuelGap(v),linkedGap=isEdit?gapByBaseline(v,rec.id):null;
   const dFuel=isEdit?(rec.fuel||""):"", dPlace=isEdit?(rec.place||""):"";
   // SPBU (lokasi): cocokkan ke kamus → bila tak ada, tampil "Lainnya…" + kolom teks (data lama tetap aman)
   const knownBrand=SPBU_DICT.some(b=>b.brand===dPlace);
@@ -1901,6 +1997,9 @@ function fuelModal(vid,opts){
     </div>
     <div class="field"><label>Jenis pengisian</label><select id="ftype"><option value="partial" ${dFill==="partial"?"selected":""}>Parsial — tidak sampai penuh</option><option value="full" ${dFill==="full"?"selected":""}>Penuh — auto-stop pertama / titik penuh konsisten</option></select>
       <div class="hint" style="margin-top:6px">Siklus full-to-full memerlukan <b>odometer dan liter</b>. Pengisian parsial di tengah tetap dijumlahkan otomatis.</div></div>
+    <div id="fgapWrap" style="${dFill==="full"?"":"display:none"}">
+      ${linkedGap?`<div class="gap-note"><b>Baseline Reset</b><br>Catatan penuh ini memulihkan Recording Gap dan harus tetap berjenis Penuh.</div>`:pendingGap&&!isEdit?`<div class="gap-note"><b>Recording Gap aktif.</b><br>Catatan penuh ini otomatis menjadi baseline baru. Siklus dari baseline lama ke catatan ini tidak akan dihitung.</div>`:!isEdit?`<label class="gap-choice"><input type="checkbox" id="fgapBefore"><span><b>Saya lupa mencatat satu atau beberapa pengisian sebelum catatan ini.</b><br>Catatan penuh ini akan menjadi baseline baru tanpa membuat transaksi dummy.</span></label>`:""}
+    </div>
     <div class="field"><label>Perlakuan analitik</label><select id="fanalytic">
       <option value="auto" ${dOverride==="auto"?"selected":""}>Otomatis — ikuti pemeriksaan sistem</option>
       <option value="include" ${dOverride==="include"?"selected":""}>Paksa gunakan bila terdeteksi menyimpang</option>
@@ -1909,7 +2008,8 @@ function fuelModal(vid,opts){
     ${detail}
     ${board}
     <div class="row"><button class="btn ghost" id="c">Batal</button><button class="btn primary" id="ok">${isEdit?"Simpan Perubahan":"Simpan"}</button></div>`);
-  const fo=$("#fo");if(!isEdit){fo.focus();fo.select();}
+  const fo=$("#fo"),ftypeEl=$("#ftype"),gapWrap=$("#fgapWrap");if(!isEdit){fo.focus();fo.select();}
+  if(ftypeEl)ftypeEl.onchange=()=>{if(gapWrap)gapWrap.style.display=ftypeEl.value==="full"?"":"none";};
   if(full){
     const fb=$("#fbrand"),ff=$("#ffuel");
     const syncFuel=()=>{                                   // bangun ulang daftar bensin sesuai SPBU terpilih
@@ -1931,16 +2031,22 @@ function fuelModal(vid,opts){
     const fl=Math.max(0,parseFloat(String($("#fl").value).replace(",","."))||0);const fc=clean($("#fc").value);
     const ftype=($("#ftype")&&$("#ftype").value==="full")?"full":"partial";
     const analytic=($("#fanalytic")&&["include","exclude"].includes($("#fanalytic").value))?$("#fanalytic").value:"auto";
+    const manualGap=!!($("#fgapBefore")&&$("#fgapBefore").checked);
     if(diffDays(todayStr(),fd)>0){toast("Tanggal tidak boleh di masa depan");return;}
     if(fc<=0&&fl<=0){toast("Isi minimal biaya atau liter");return;}
     if(ftype==="full"&&(fov<=0||fl<=0)){toast("Full tank untuk analitik memerlukan odometer dan liter");return;}
+    if(linkedGap&&ftype!=="full"){toast("Baseline Reset harus tetap berjenis Penuh");return;}
     const resolve=(selId,otherId)=>{const el=$(selId);if(!el)return "";const sv=el.value;if(sv===OTHER){return ($(otherId).value||"").trim();}return sv;};
     const apply=()=>{
-      if(!Array.isArray(v.fuelLog))v.fuelLog=[];
-      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;rec.fillType=ftype;rec.analyticsOverride=analytic;rec.createdAt=Number(rec.createdAt)||Date.now();if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fbrand","#fbrandOther");}}
-      else{v.fuelLog.unshift({id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fillType:ftype,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fbrand","#fbrandOther"):"",analyticsOverride:analytic,createdAt:Date.now()});}
+      if(!Array.isArray(v.fuelLog))v.fuelLog=[];if(!Array.isArray(v.fuelGaps))v.fuelGaps=[];
+      const pendingBefore=!!pendingFuelGap(v);let savedEntry;
+      if(isEdit){rec.date=fd;rec.odo=fov;rec.liters=fl;rec.cost=fc;rec.fillType=ftype;rec.analyticsOverride=analytic;rec.createdAt=Number(rec.createdAt)||Date.now();if(full){rec.fuel=resolve("#ffuel","#ffuelOther");rec.place=resolve("#fbrand","#fbrandOther");}savedEntry=rec;}
+      else{savedEntry={id:uid(),date:fd,odo:fov,liters:fl,cost:fc,fillType:ftype,fuel:full?resolve("#ffuel","#ffuelOther"):"",place:full?resolve("#fbrand","#fbrandOther"):"",analyticsOverride:analytic,createdAt:Date.now()};v.fuelLog.unshift(savedEntry);}
+      if(ftype==="full"&&manualGap)createRecoveredFuelGap(v,savedEntry);
+      normalizeFuelGaps(v);
+      const recoveredNow=pendingBefore&&!pendingFuelGap(v)&&ftype==="full";
       if(fov>v.odo)v.odo=fov;
-      save();render();closeSheet();toast(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽");
+      save();render();closeSheet();toast(recoveredNow||manualGap?"Baseline berhasil dipulihkan ✓":(isEdit?"Catatan diperbarui ✓":"Isi bensin dicatat ⛽"));
       if(onDone)onDone();
     };
     if(isEdit){
@@ -1959,44 +2065,39 @@ function fuelModal(vid,opts){
 }
 function deleteFuel(vid,id,onDone){
   const v=state.vehicles.find(x=>x.id===vid);if(!v)return;
-  confirmBox("Hapus catatan bensin?","Catatan pengisian ini akan dihapus permanen.",()=>{
-    v.fuelLog=(v.fuelLog||[]).filter(x=>x.id!==id);save();render();toast("Catatan dihapus");if(onDone)onDone();
+  confirmBox("Hapus catatan bensin?","Catatan pengisian ini akan dihapus permanen. Jika merupakan baseline reset, Recording Gap kembali menunggu pengisian penuh.",()=>{
+    v.fuelLog=(v.fuelLog||[]).filter(x=>x.id!==id);normalizeFuelGaps(v);save();render();toast("Catatan dihapus");if(onDone)onDone();
   },"Ya, hapus");
 }
 function fuelArchiveModal(vid){
-  state.selected=vid;const v=vehicle();if(!v)return;
-  const recs=fuelEntries(v).slice().reverse();
-  const cycleByEnd=new Map(buildFuelAnalytics(v).cycles.map(c=>[c.endId,c]));
+  state.selected=vid;const v=vehicle();if(!v)return;normalizeFuelGaps(v);
+  const recs=fuelEntries(v),analytics=buildFuelAnalytics(v),cycleByEnd=new Map(analytics.cycles.map(c=>[c.endId,c]));
+  const entryById=new Map(recs.map(r=>[r.id,r]));
+  const items=recs.map(r=>({type:"fuel",date:r.date,order:Number(r.createdAt)||0,rec:r}));
+  (v.fuelGaps||[]).forEach(g=>{const b=g.baselineId?entryById.get(g.baselineId):null;items.push({type:"gap",date:(b&&b.date)||g.date||todayStr(),order:(b?Number(b.createdAt)||0:Number(g.createdAt)||0)+.1,gap:g});});
+  items.sort((a,b)=>a.date!==b.date?(a.date<b.date?1:-1):b.order-a.order);
   let body;
-  if(!recs.length)body=`<div class="emptylog" style="margin-bottom:4px">Belum ada catatan bensin. Tekan tombol di atas untuk menambah.</div>`;
-  else body=recs.map(r=>{
-    const tags=[];
-    if(r.fillType==="full")tags.push(`<span class="ftag full">Penuh</span>`);
-    const cy=cycleByEnd.get(r.id);
+  if(!items.length)body=`<div class="emptylog" style="margin-bottom:4px">Belum ada catatan bensin. Tekan tombol di atas untuk menambah.</div>`;
+  else body=items.map(item=>{
+    if(item.type==="gap"){const g=item.gap;if(!g.baselineId)return `<div class="gapcard pending"><div class="gh"><div><div class="gt">⚠ Recording Gap aktif</div><div class="gm">Dimulai setelah pengisian penuh ${g.startAfterDate?fmtDLong(g.startAfterDate):"terakhir"}. Pengisian penuh berikutnya otomatis menjadi baseline baru.</div></div></div><div class="gacts"><button class="mini" data-gx="${g.id}">Batalkan Gap</button></div></div>`;
+      return `<div class="gapcard"><div class="gh"><div><div class="gt">┃ Baseline Reset</div><div class="gm">Histori tidak lengkap setelah ${g.startAfterDate?fmtDLong(g.startAfterDate):"baseline lama"}. Analitik dimulai kembali dari ${fmtDLong(g.baselineDate)}.</div></div></div><div class="gacts"><button class="mini" data-gx="${g.id}">Hapus penanda</button></div></div>`;}
+    const r=item.rec,tags=[];if(r.fillType==="full")tags.push(`<span class="ftag full">Penuh</span>`);
+    const cy=cycleByEnd.get(r.id),reset=gapByBaseline(v,r.id);
+    if(reset)tags.push(`<span class="ftag reset">Baseline Reset</span>`);
     if(r.analyticsOverride==="exclude")tags.push(`<span class="ftag excluded">Diabaikan</span>`);
+    else if(cy&&cy.status==="gap")tags.push(`<span class="ftag gap">Recording Gap</span>`);
     else if(cy&&cy.status==="suspect")tags.push(`<span class="ftag suspect">Siklus mencurigakan</span>`);
     else if(cy&&cy.status==="invalid")tags.push(`<span class="ftag excluded">Siklus tidak valid</span>`);
     else if(cy&&cy.status==="forced")tags.push(`<span class="ftag forced">Dipaksa digunakan</span>`);
-    if(r.fuel)tags.push(`<span class="ftag">${esc(r.fuel)}</span>`);
-    if(r.place)tags.push(`<span class="ftag">${esc(r.place)}</span>`);
-    if(r.liters>0)tags.push(`<span class="ftag">${r.liters} L</span>`);
-    return `<div class="frec">
-      <div class="fh"><span class="fd">${fmtDLong(r.date)}</span><span class="fc">${r.cost>0?"Rp "+nf(r.cost):"—"}</span></div>
-      ${r.odo>0?`<div class="fm">${nf(r.odo)} km${r.liters>0&&r.cost>0?` · Rp ${nf(Math.round(r.cost/r.liters))}/L`:""}</div>`:""}
-      ${tags.length?`<div class="ftags">${tags.join("")}</div>`:""}
-      <div class="facts"><button class="mini" data-fe="${r.id}">✏️ Edit</button><button class="mini del" data-fx="${r.id}" style="color:var(--red);border-color:rgba(255,93,82,.25)">Hapus</button></div>
-    </div>`;
+    if(r.fuel)tags.push(`<span class="ftag">${esc(r.fuel)}</span>`);if(r.place)tags.push(`<span class="ftag">${esc(r.place)}</span>`);if(r.liters>0)tags.push(`<span class="ftag">${r.liters} L</span>`);
+    return `<div class="frec"><div class="fh"><span class="fd">${fmtDLong(r.date)}</span><span class="fc">${r.cost>0?"Rp "+nf(r.cost):"—"}</span></div>${r.odo>0?`<div class="fm">${nf(r.odo)} km${r.liters>0&&r.cost>0?` · Rp ${nf(Math.round(r.cost/r.liters))}/L`:""}</div>`:""}${tags.length?`<div class="ftags">${tags.join("")}</div>`:""}<div class="facts"><button class="mini" data-fe="${r.id}">✏️ Edit</button><button class="mini del" data-fx="${r.id}" style="color:var(--red);border-color:rgba(255,93,82,.25)">Hapus</button></div></div>`;
   }).join("");
-  openSheet(`<h3>⛽ Arsip Bensin · ${esc(v.name)}</h3>
-    <button class="addrem" id="fadd" style="margin-bottom:14px">＋ Catat Bensin</button>
-    ${body}
-    <div class="row" style="margin-top:14px"><button class="btn ghost" id="c">Tutup</button></div>`);
-  $("#c").onclick=closeSheet;
-  $("#fadd").onclick=()=>fuelModal(vid,{full:true,onDone:()=>fuelArchiveModal(vid)});
-  recs.forEach(r=>{
-    $("#sheet").querySelector(`[data-fe="${r.id}"]`).onclick=()=>fuelModal(vid,{full:true,editId:r.id,onDone:()=>fuelArchiveModal(vid)});
-    $("#sheet").querySelector(`[data-fx="${r.id}"]`).onclick=()=>deleteFuel(vid,r.id,()=>fuelArchiveModal(vid));
-  });
+  const pg=pendingFuelGap(v);
+  openSheet(`<h3>⛽ Arsip Bensin · ${esc(v.name)}</h3><div class="two" style="margin-bottom:14px"><button class="addrem" id="fadd" style="margin:0">＋ Catat Bensin</button><button class="addrem" id="fgap" style="margin:0;border-color:${pg?"rgba(255,157,46,.38)":"var(--line2)"};color:${pg?"var(--orange)":"var(--amber)"}">${pg?"⚠ Gap Aktif":"⚠ Histori Terlewat"}</button></div>${body}<div class="row" style="margin-top:14px"><button class="btn ghost" id="c">Tutup</button></div>`);
+  $("#c").onclick=closeSheet;$("#fadd").onclick=()=>fuelModal(vid,{full:true,onDone:()=>fuelArchiveModal(vid)});
+  $("#fgap").onclick=()=>pg?toast("Recording Gap sudah aktif"):markFuelGap(vid,()=>fuelArchiveModal(vid));
+  recs.forEach(r=>{const ed=$("#sheet").querySelector(`[data-fe="${r.id}"]`),del=$("#sheet").querySelector(`[data-fx="${r.id}"]`);if(ed)ed.onclick=()=>fuelModal(vid,{full:true,editId:r.id,onDone:()=>fuelArchiveModal(vid)});if(del)del.onclick=()=>deleteFuel(vid,r.id,()=>fuelArchiveModal(vid));});
+  (v.fuelGaps||[]).forEach(g=>{const el=$("#sheet").querySelector(`[data-gx="${g.id}"]`);if(el)el.onclick=()=>deleteFuelGap(vid,g.id,()=>fuelArchiveModal(vid));});
 }
 
 function remCard(r,v){
@@ -2327,7 +2428,7 @@ $("#menuBtn").onclick=()=>{
   $("#about").onclick=()=>{closeSheet();aboutModal();};
 };
 function doExport(){
-  const data=JSON.stringify({app:"garasi-log",version:9,exportedAt:new Date().toISOString(),state},null,2);
+  const data=JSON.stringify({app:"garasi-log",version:10,exportedAt:new Date().toISOString(),state},null,2);
   const url=URL.createObjectURL(new Blob([data],{type:"application/json"}));
   const d=new Date();const stamp=`${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}`;
   const a=document.createElement("a");a.href=url;a.download=`garasi-log-${stamp}.json`;
@@ -2348,7 +2449,7 @@ function aboutModal(){
   openSheet(`<h3>ℹ️ Tentang Garasi Log</h3>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:-4px 0 14px">Aplikasi offline. Semua data disimpan <b style="color:var(--text)">di perangkat ini saja</b> — tidak ada server, tidak dikirim ke mana pun.</p>
     <p style="color:var(--muted);font-size:13.5px;line-height:1.6;margin:0 0 16px">⚠️ Data bisa hilang jika kamu menghapus data situs. Biasakan <b style="color:var(--amber)">Export backup</b> rutin lalu simpan file .json-nya di Google Drive.</p>
-    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 5 beta · analitik full-to-full robust, chart EWMA, validasi outlier, dan confidence multidimensi. Papan kerja + catat cepat bensin/odometer per kendaraan, profil per kendaraan, telemetri jarak & bensin (tank-to-tank) dengan baseline harian robust, deteksi perjalanan jauh, servis mendatang di beranda, dan grafik biaya bulanan (servis vs bensin) dengan arsip per tahun. Tetap kompatibel impor backup lama.</p>
+    <p style="color:var(--faint);font-size:12px;margin:0 0 16px">Versi 6 beta · Recording Gap dan Baseline Recovery menjaga analitik saat histori pengisian terlewat tanpa transaksi dummy. Catat Cepat kini berada di bagian atas papan kerja; grafik memutus garis pada Gap, EWMA dimulai ulang, confidence pulih bertahap, dan bulan dengan histori tidak lengkap tidak dipakai untuk pembelajaran budget. Tetap kompatibel impor backup lama.</p>
     <div class="row"><button class="btn primary" id="c">Mengerti</button></div>`);
   $("#c").onclick=closeSheet;
 }
